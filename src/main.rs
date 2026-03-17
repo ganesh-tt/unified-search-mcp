@@ -3,6 +3,7 @@ use std::env;
 
 use unified_search_mcp::config;
 use unified_search_mcp::core::{OrchestratorConfig, SearchOrchestrator};
+use unified_search_mcp::mcp;
 use unified_search_mcp::server::UnifiedSearchServer;
 use unified_search_mcp::sources::confluence::ConfluenceSource;
 use unified_search_mcp::sources::jira::JiraSource;
@@ -33,11 +34,11 @@ async fn main() {
             eprintln!("Starting with no sources configured. Create a config.yaml to enable sources.");
             eprintln!("See config.example.yaml for a template.");
 
-            // Build a server with no sources
+            // Build a server with no sources and serve via MCP
             let orchestrator = SearchOrchestrator::new(vec![], OrchestratorConfig::default());
-            let _server = UnifiedSearchServer::new(orchestrator);
-            println!("Server ready with 0 sources (no config loaded).");
-            println!("MCP stdio transport not yet wired — exiting.");
+            let server = UnifiedSearchServer::new(orchestrator);
+            eprintln!("unified-search-mcp v0.1.0 -- 0 source(s) ready (no config loaded)");
+            mcp::serve_stdio(server).await;
             return;
         }
     };
@@ -47,8 +48,6 @@ async fn main() {
         let ok = unified_search_mcp::verify::verify(&app_config, config_path).await;
         std::process::exit(if ok { 0 } else { 1 });
     }
-
-    println!("unified-search-mcp v0.1.0");
 
     // Build sources from config
     let mut sources: Vec<Box<dyn SearchSource>> = Vec::new();
@@ -91,12 +90,13 @@ async fn main() {
     };
 
     let orchestrator = SearchOrchestrator::new(sources, orchestrator_config);
-    let _server = UnifiedSearchServer::new(orchestrator);
+    let server = UnifiedSearchServer::new(orchestrator);
 
-    println!(
-        "Server ready with {} source(s): {}",
-        source_count,
-        app_config.server.name,
+    // Stdout is now the MCP JSON-RPC channel -- all diagnostics go to stderr
+    eprintln!(
+        "unified-search-mcp v0.1.0 -- {} source(s) ready: {}",
+        source_count, app_config.server.name,
     );
-    println!("MCP stdio transport not yet wired — exiting.");
+
+    mcp::serve_stdio(server).await;
 }
