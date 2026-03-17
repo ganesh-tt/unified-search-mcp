@@ -10,18 +10,25 @@ use unified_search_mcp::sources::local_text::LocalTextSource;
 use unified_search_mcp::sources::slack::SlackSource;
 use unified_search_mcp::sources::SearchSource;
 
-fn main() {
-    // Determine config path: CLI arg or default
-    let config_path = env::args()
-        .nth(1)
-        .unwrap_or_else(|| "./config.yaml".to_string());
-
-    println!("unified-search-mcp v0.1.0");
+#[tokio::main]
+async fn main() {
+    let args: Vec<String> = env::args().collect();
+    let verify = args.iter().any(|a| a == "--verify");
+    let config_path = args
+        .iter()
+        .position(|a| a == "--config")
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.as_str())
+        .unwrap_or("config.yaml");
 
     // Attempt to load config
-    let app_config = match config::load(&config_path) {
+    let app_config = match config::load(config_path) {
         Ok(cfg) => cfg,
         Err(e) => {
+            if verify {
+                eprintln!("[FAIL] Could not load config from '{}': {}", config_path, e);
+                std::process::exit(1);
+            }
             eprintln!("Warning: Could not load config from '{}': {}", config_path, e);
             eprintln!("Starting with no sources configured. Create a config.yaml to enable sources.");
             eprintln!("See config.example.yaml for a template.");
@@ -34,6 +41,14 @@ fn main() {
             return;
         }
     };
+
+    // Run preflight verification if --verify was passed
+    if verify {
+        let ok = unified_search_mcp::verify::verify(&app_config, config_path).await;
+        std::process::exit(if ok { 0 } else { 1 });
+    }
+
+    println!("unified-search-mcp v0.1.0");
 
     // Build sources from config
     let mut sources: Vec<Box<dyn SearchSource>> = Vec::new();
