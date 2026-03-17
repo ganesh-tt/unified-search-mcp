@@ -18,6 +18,33 @@ This MCP server exposes one `unified_search` tool that fans out queries to all s
 - **Plugin architecture** — add new sources by implementing the `SearchSource` trait
 - **Markdown table output** — token-efficient format for LLM consumption
 
+## Prerequisites
+
+**Rust toolchain** — if you don't have `cargo` installed:
+
+```bash
+# Install rustup (Rust's official installer) — one command, follow the prompts
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Reload your shell (or open a new terminal)
+source ~/.cargo/env
+
+# Verify
+cargo --version   # should print cargo 1.xx.x
+```
+
+> Already have Rust? Any version 1.75+ works. Check with `rustc --version`.
+
+**Optional but recommended:** [ripgrep](https://github.com/BurntSushi/ripgrep) for faster local file search:
+
+```bash
+# macOS
+brew install ripgrep
+
+# or via cargo
+cargo install ripgrep
+```
+
 ## Installation
 
 ```bash
@@ -26,7 +53,12 @@ cd unified-search-mcp
 cargo build --release
 ```
 
-Binary is at `target/release/unified-search-mcp` (~7MB).
+Binary is at `target/release/unified-search-mcp` (~7MB). You can copy it anywhere:
+
+```bash
+# Optional: put it on your PATH
+cp target/release/unified-search-mcp ~/.local/bin/
+```
 
 ## Setup (3 steps)
 
