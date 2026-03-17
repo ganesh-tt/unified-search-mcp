@@ -198,6 +198,9 @@ pub fn load(path: &str) -> Result<AppConfig, SearchError> {
         ))
     })?;
 
+    // Clear any stale missing vars from previous calls (important for tests)
+    MISSING_ENV_VARS.lock().unwrap().clear();
+
     // Interpolate env vars: ${VAR_NAME} -> value
     let interpolated = interpolate_env_vars(&content)?;
 
@@ -226,12 +229,14 @@ pub fn load(path: &str) -> Result<AppConfig, SearchError> {
 }
 
 /// Replace `${VAR_NAME}` patterns with the corresponding environment variable
-/// value. Returns an error naming the variable if it is not set.
+/// value. Missing env vars are replaced with an empty string and recorded — the
+/// caller validates required fields later (only for enabled sources). This
+/// avoids erroring on disabled sources whose env vars aren't set.
 fn interpolate_env_vars(input: &str) -> Result<String, SearchError> {
     let re = Regex::new(r"\$\{([^}]+)\}").expect("env var regex should compile");
     let mut result = input.to_string();
+    let mut missing: Vec<String> = Vec::new();
 
-    // Collect all matches first to avoid borrow issues
     let captures: Vec<(String, String)> = re
         .captures_iter(input)
         .map(|cap| {
@@ -242,17 +247,29 @@ fn interpolate_env_vars(input: &str) -> Result<String, SearchError> {
         .collect();
 
     for (full_match, var_name) in captures {
-        let value = std::env::var(&var_name).map_err(|_| {
-            SearchError::Config(format!(
-                "Environment variable '{}' is not set (referenced in config)",
-                var_name
-            ))
-        })?;
-        result = result.replace(&full_match, &value);
+        match std::env::var(&var_name) {
+            Ok(value) => {
+                result = result.replace(&full_match, &value);
+            }
+            Err(_) => {
+                missing.push(var_name);
+                // Replace with empty — validation happens per-source when enabled
+                result = result.replace(&full_match, "");
+            }
+        }
+    }
+
+    // Store missing var names so validation can check them per enabled source
+    if !missing.is_empty() {
+        MISSING_ENV_VARS.lock().unwrap().extend(missing);
     }
 
     Ok(result)
 }
+
+use std::sync::Mutex;
+static MISSING_ENV_VARS: std::sync::LazyLock<Mutex<Vec<String>>> =
+    std::sync::LazyLock::new(|| Mutex::new(Vec::new()));
 
 /// Expand tilde in a path string using shellexpand.
 fn expand_tilde(path: &str) -> String {
@@ -320,10 +337,41 @@ fn build_sources(raw: RawSourcesConfig) -> Result<SourcesConfig, SearchError> {
         }
     });
 
-    Ok(SourcesConfig {
+    let config = SourcesConfig {
         slack,
         confluence,
         jira,
         local_text,
-    })
+    };
+
+    // Validate: enabled sources must have required fields (non-empty after env var interpolation)
+    validate_enabled_sources(&config)?;
+
+    Ok(config)
+}
+
+fn validate_enabled_sources(sources: &SourcesConfig) -> Result<(), SearchError> {
+    let missing = MISSING_ENV_VARS.lock().unwrap();
+
+    if missing.is_empty() {
+        return Ok(());
+    }
+
+    // Check if any missing env var belongs to an enabled source
+    // For each missing var, check if the source that uses it is enabled
+    for var in missing.iter() {
+        let is_slack_var = sources.slack.as_ref()
+            .map_or(false, |s| s.enabled && s.config.user_token.is_empty());
+        let is_confluence_var = sources.confluence.as_ref()
+            .map_or(false, |c| c.enabled && (c.config.base_url.is_empty() || c.config.api_token.is_empty() || c.config.email.is_empty()));
+        let is_jira_var = sources.jira.as_ref()
+            .map_or(false, |j| j.enabled && (j.config.base_url.is_empty() || j.config.api_token.is_empty() || j.config.email.is_empty()));
+
+        if is_slack_var || is_confluence_var || is_jira_var {
+            return Err(SearchError::Config(format!(
+                "Environment variable '{}' is not set (referenced in config)", var
+            )));
+        }
+    }
+    Ok(())
 }
