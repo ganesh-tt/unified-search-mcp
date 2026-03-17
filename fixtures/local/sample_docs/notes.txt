@@ -1,0 +1,2 @@
+JIRA ticket FIN-10384 tracks the broadcast threshold removal.
+The fix was deployed in v6.3.4.

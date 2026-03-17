@@ -1,0 +1,29 @@
+{
+  "results": [
+    {
+      "content": {"id": "12345", "type": "page", "title": "Broadcast Threshold Design"},
+      "excerpt": "The <b>broadcast threshold</b> was set to <em>50K rows</em> after analysis of memory usage patterns.",
+      "url": "/wiki/spaces/DEV/pages/12345",
+      "lastModified": "2026-03-10T10:00:00.000Z",
+      "resultGlobalContainer": {"title": "DEV", "displayUrl": "/wiki/spaces/DEV"}
+    },
+    {
+      "content": {"id": "12346", "type": "page", "title": "Spark Configuration Guide"},
+      "excerpt": "Configure the <b>broadcast</b> size <b>threshold</b> in the HOCON config under screening.broadcast.",
+      "url": "/wiki/spaces/DEV/pages/12346",
+      "lastModified": "2026-02-15T08:00:00.000Z",
+      "resultGlobalContainer": {"title": "DEV", "displayUrl": "/wiki/spaces/DEV"}
+    },
+    {
+      "content": {"id": "12347", "type": "page", "title": "OOM Post-Mortem Feb 2026"},
+      "excerpt": "Root cause: unconditional <b>broadcast()</b> on watchlist DataFrame exceeding <b>threshold</b>.",
+      "url": "/wiki/spaces/OPS/pages/12347",
+      "lastModified": "2026-02-20T14:00:00.000Z",
+      "resultGlobalContainer": {"title": "OPS", "displayUrl": "/wiki/spaces/OPS"}
+    }
+  ],
+  "start": 0,
+  "limit": 10,
+  "size": 3,
+  "totalSize": 3
+}

@@ -1,0 +1,33 @@
+[package]
+name = "unified-search-mcp"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Unified search MCP server — search Slack, Confluence, JIRA, and local files from one tool"
+license = "MIT"
+
+[dependencies]
+rmcp = { version = "1", features = ["server", "transport-io"] }
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+futures = "0.3"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yml = "0.0.12"
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "2"
+shellexpand = "3"
+regex = "1"
+grep-regex = "0.1"
+grep-searcher = "0.1"
+walkdir = "2"
+
+[dev-dependencies]
+wiremock = "0.6"
+tokio-test = "0.4"
+tempfile = "3"
+assert_matches = "1.5"
+pretty_assertions = "1"

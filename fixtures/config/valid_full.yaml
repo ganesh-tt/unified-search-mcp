@@ -1,0 +1,34 @@
+server:
+  name: "test-server"
+  max_results: 20
+  timeout_seconds: 10
+  log_level: "info"
+sources:
+  slack:
+    enabled: true
+    user_token: "${TEST_SLACK_TOKEN}"
+    weight: 1.0
+    max_results: 10
+  confluence:
+    enabled: true
+    base_url: "https://test.atlassian.net"
+    email: "test@example.com"
+    api_token: "${TEST_ATLASSIAN_TOKEN}"
+    spaces: ["DEV"]
+    weight: 1.0
+    max_results: 10
+  jira:
+    enabled: true
+    base_url: "https://test.atlassian.net"
+    email: "test@example.com"
+    api_token: "${TEST_ATLASSIAN_TOKEN}"
+    projects: ["FIN"]
+    weight: 1.0
+    max_results: 10
+  local_text:
+    enabled: true
+    paths: ["~/projects/test-repo"]
+    include_patterns: ["**/*.rs"]
+    exclude_patterns: ["**/target/**"]
+    weight: 0.8
+    max_results: 10

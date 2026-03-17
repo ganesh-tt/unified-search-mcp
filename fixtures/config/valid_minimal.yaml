@@ -1,0 +1,4 @@
+sources:
+  local_text:
+    enabled: true
+    paths: ["/tmp/test"]

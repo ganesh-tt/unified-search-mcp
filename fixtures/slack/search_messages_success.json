@@ -1,0 +1,36 @@
+{
+  "ok": true,
+  "query": "broadcast threshold",
+  "messages": {
+    "total": 3,
+    "matches": [
+      {
+        "type": "message",
+        "ts": "1710700800.123456",
+        "text": "we decided 50K rows as the broadcast threshold after the OOM incident",
+        "permalink": "https://workspace.slack.com/archives/C01ABC/p1710700800123456",
+        "channel": {"id": "C01ABC", "name": "engineering"},
+        "username": "ganesh",
+        "score": 0.95
+      },
+      {
+        "type": "message",
+        "ts": "1710614400.654321",
+        "text": "the broadcast threshold needs to be configurable per tenant",
+        "permalink": "https://workspace.slack.com/archives/C01ABC/p1710614400654321",
+        "channel": {"id": "C01ABC", "name": "engineering"},
+        "username": "priya",
+        "score": 0.82
+      },
+      {
+        "type": "message",
+        "ts": "1710528000.111111",
+        "text": "broadcast threshold PR merged, default is 50000",
+        "permalink": "https://workspace.slack.com/archives/C02DEF/p1710528000111111",
+        "channel": {"id": "C02DEF", "name": "deployments"},
+        "username": "ganesh",
+        "score": 0.71
+      }
+    ]
+  }
+}

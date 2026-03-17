@@ -1,0 +1,40 @@
+{
+  "startAt": 0,
+  "maxResults": 10,
+  "total": 3,
+  "issues": [
+    {
+      "key": "FIN-10384",
+      "self": "https://org.atlassian.net/rest/api/3/issue/10384",
+      "fields": {
+        "summary": "Remove broadcastRowThreshold callers and constant",
+        "description": {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Remove the broadcastRowThreshold configuration, SQL entries, and constant since we now use auto-broadcast with merge hints instead."}]}]},
+        "status": {"name": "In Progress"},
+        "updated": "2026-03-15T12:00:00.000+0000",
+        "assignee": {"displayName": "Ganesh K"}
+      }
+    },
+    {
+      "key": "FIN-10385",
+      "self": "https://org.atlassian.net/rest/api/3/issue/10385",
+      "fields": {
+        "summary": "Add WatchlistBroadcastRowThreshold seed SQL",
+        "description": {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Add the threshold configuration to dml.sql and the v6.3.4 migration scripts."}]}]},
+        "status": {"name": "Done"},
+        "updated": "2026-03-12T09:00:00.000+0000",
+        "assignee": {"displayName": "Ganesh K"}
+      }
+    },
+    {
+      "key": "FIN-10071",
+      "self": "https://org.atlassian.net/rest/api/3/issue/10071",
+      "fields": {
+        "summary": "Local E2E setup for screening pipeline",
+        "description": {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Set up local end-to-end testing environment for the screening pipeline with all services running in Docker."}]}]},
+        "status": {"name": "To Do"},
+        "updated": "2026-03-01T08:00:00.000+0000",
+        "assignee": {"displayName": "Priya S"}
+      }
+    }
+  ]
+}

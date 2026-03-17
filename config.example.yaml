@@ -1,0 +1,49 @@
+server:
+  name: "unified-search"
+  max_results: 20
+  timeout_seconds: 10
+  log_level: "info"
+
+sources:
+  slack:
+    enabled: true
+    user_token: "${SLACK_USER_TOKEN}"
+    weight: 1.0
+    max_results: 10
+
+  confluence:
+    enabled: true
+    base_url: "${ATLASSIAN_BASE_URL}"
+    email: "${ATLASSIAN_EMAIL}"
+    api_token: "${ATLASSIAN_API_TOKEN}"
+    spaces: []
+    weight: 1.0
+    max_results: 10
+
+  jira:
+    enabled: true
+    base_url: "${ATLASSIAN_BASE_URL}"
+    email: "${ATLASSIAN_EMAIL}"
+    api_token: "${ATLASSIAN_API_TOKEN}"
+    projects: []
+    weight: 1.0
+    max_results: 10
+
+  local_text:
+    enabled: true
+    paths:
+      - "~/projects/my-repo"
+    include_patterns:
+      - "**/*.{rs,py,scala,java,js,ts,go,sql,sh,toml,yaml,yml}"
+    exclude_patterns:
+      - "**/target/**"
+      - "**/node_modules/**"
+      - "**/.git/**"
+    weight: 0.8
+    max_results: 10
+
+  # local_vector: (Phase 2)
+  #   enabled: false
+  #   paths: ["~/documents/notes"]
+  #   model_path: "~/.unified-search/models/all-MiniLM-L6-v2.onnx"
+  #   index_path: "~/.unified-search/index"

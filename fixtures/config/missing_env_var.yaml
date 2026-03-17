@@ -1,0 +1,4 @@
+sources:
+  slack:
+    enabled: true
+    user_token: "${NONEXISTENT_VAR_12345}"
