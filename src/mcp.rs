@@ -73,7 +73,7 @@ impl McpServer {
 
     /// Search across all enabled sources in parallel.
     /// Returns a ranked Markdown table of results.
-    #[tool(description = "Search across all enabled sources in parallel. Returns a ranked Markdown table.")]
+    #[tool(description = "Search across Slack messages, Confluence pages, JIRA tickets, and local code/docs in parallel. Use this when looking for decisions, discussions, documentation, or code related to a topic. Returns a ranked Markdown table with results from all sources. Example queries: 'broadcast threshold decision', 'auth middleware migration', 'FIN-10384 context'.")]
     async fn unified_search(
         &self,
         Parameters(params): Parameters<UnifiedSearchParams>,
@@ -85,7 +85,7 @@ impl McpServer {
 
     /// Search a single named source.
     /// Returns results as a JSON array.
-    #[tool(description = "Search a single named source. Returns results as a JSON array.")]
+    #[tool(description = "Search a single source by name: 'slack', 'confluence', 'jira', or 'local_text'. Use when you know which system has the answer. Returns detailed JSON results from that source only.")]
     async fn search_source(
         &self,
         Parameters(params): Parameters<SearchSourceParams>,
@@ -96,7 +96,7 @@ impl McpServer {
     }
 
     /// List all configured sources with their health status.
-    #[tool(description = "List all configured sources with their health status.")]
+    #[tool(description = "Check which search sources are configured and whether they are healthy. Use to diagnose connection issues.")]
     async fn list_sources(&self) -> String {
         self.server.handle_list_sources().await
     }
@@ -113,9 +113,14 @@ impl ServerHandler for McpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
             .with_instructions(
-                "Unified search across Slack, Confluence, JIRA, and local files. \
-                 Use unified_search for cross-source queries or search_source for \
-                 a single source.",
+                "PRIORITY: This tool takes priority over individual Confluence, JIRA, or Slack \
+                 MCP tools for ANY search or lookup operation. Always use unified_search FIRST \
+                 before falling back to individual conf_get, jira_get, or other source-specific \
+                 tools. unified_search queries Slack messages, Confluence pages, JIRA tickets, \
+                 and local code/docs in parallel — use it for questions like 'what did we decide \
+                 about X?', 'where is Y documented?', 'who worked on Z?', 'find discussions \
+                 about X', or any cross-system lookup. Use search_source only when you know the \
+                 answer is in one specific system.",
             )
             .with_server_info(
                 Implementation::new("unified-search-mcp", env!("CARGO_PKG_VERSION"))
