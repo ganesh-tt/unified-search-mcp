@@ -114,6 +114,238 @@ impl GitHubSource {
         }
     }
 
+    // -----------------------------------------------------------------------
+    // get_detail: PRs
+    // -----------------------------------------------------------------------
+
+    /// Fetch full detail for a GitHub Pull Request and render as Markdown.
+    pub async fn get_detail_pr(
+        &self,
+        owner: &str,
+        repo: &str,
+        number: u64,
+    ) -> Result<String, SearchError> {
+        // Fetch all three endpoints in parallel
+        let pr_path = format!("repos/{}/{}/pulls/{}", owner, repo, number);
+        let reviews_path = format!("repos/{}/{}/pulls/{}/reviews", owner, repo, number);
+        let comments_path = format!("repos/{}/{}/pulls/{}/comments", owner, repo, number);
+
+        let pr_args = ["api", pr_path.as_str()];
+        let reviews_args = ["api", reviews_path.as_str()];
+        let comments_args = ["api", comments_path.as_str()];
+
+        let (pr_result, reviews_result, comments_result) = tokio::join!(
+            self.run_gh(&pr_args),
+            self.run_gh(&reviews_args),
+            self.run_gh(&comments_args),
+        );
+
+        let pr_json: serde_json::Value = serde_json::from_str(&pr_result?)
+            .map_err(|e| SearchError::Source {
+                source_name: "github".to_string(),
+                message: format!("Failed to parse PR JSON: {}", e),
+            })?;
+
+        let reviews_json: serde_json::Value = serde_json::from_str(&reviews_result?)
+            .map_err(|e| SearchError::Source {
+                source_name: "github".to_string(),
+                message: format!("Failed to parse reviews JSON: {}", e),
+            })?;
+
+        let comments_json: serde_json::Value = serde_json::from_str(&comments_result?)
+            .map_err(|e| SearchError::Source {
+                source_name: "github".to_string(),
+                message: format!("Failed to parse comments JSON: {}", e),
+            })?;
+
+        // Extract PR metadata
+        let title = pr_json.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled");
+        let state = pr_json.get("state").and_then(|v| v.as_str()).unwrap_or("unknown");
+        let merged_at = pr_json.get("merged_at").and_then(|v| v.as_str());
+        let status = if merged_at.is_some() {
+            "Merged"
+        } else {
+            match state {
+                "open" => "Open",
+                "closed" => "Closed",
+                _ => state,
+            }
+        };
+        let author = pr_json
+            .get("user")
+            .and_then(|u| u.get("login"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let head_ref = pr_json
+            .get("head")
+            .and_then(|h| h.get("ref"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("?");
+        let base_ref = pr_json
+            .get("base")
+            .and_then(|b| b.get("ref"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("?");
+        let created_at = pr_json.get("created_at").and_then(|v| v.as_str()).unwrap_or("?");
+        let updated_at = pr_json.get("updated_at").and_then(|v| v.as_str()).unwrap_or("?");
+        let additions = pr_json.get("additions").and_then(|v| v.as_u64()).unwrap_or(0);
+        let deletions = pr_json.get("deletions").and_then(|v| v.as_u64()).unwrap_or(0);
+        let changed_files = pr_json.get("changed_files").and_then(|v| v.as_u64()).unwrap_or(0);
+        let body = pr_json.get("body").and_then(|v| v.as_str()).unwrap_or("*No description provided.*");
+
+        let mut md = String::new();
+        md.push_str(&format!("# {}/{}#{}: {}\n\n", owner, repo, number, title));
+        md.push_str("| Field | Value |\n|---|---|\n");
+        md.push_str(&format!("| Status | {} |\n", status));
+        md.push_str(&format!("| Author | {} |\n", author));
+        md.push_str(&format!("| Branch | {} → {} |\n", head_ref, base_ref));
+        md.push_str(&format!("| Created | {} |\n", created_at));
+        md.push_str(&format!("| Updated | {} |\n", updated_at));
+        if let Some(m) = merged_at {
+            md.push_str(&format!("| Merged | {} |\n", m));
+        }
+        md.push_str(&format!(
+            "| Changes | +{} -{} across {} files |\n",
+            additions, deletions, changed_files
+        ));
+
+        md.push_str(&format!("\n## Description\n\n{}\n", body));
+
+        // Reviews
+        let reviews = reviews_json.as_array().cloned().unwrap_or_default();
+        md.push_str(&format!("\n## Reviews ({})\n", reviews.len()));
+        for review in &reviews {
+            let reviewer = review
+                .get("user")
+                .and_then(|u| u.get("login"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let review_state = review.get("state").and_then(|v| v.as_str()).unwrap_or("PENDING");
+            let submitted_at = review.get("submitted_at").and_then(|v| v.as_str()).unwrap_or("?");
+            let review_body = review.get("body").and_then(|v| v.as_str()).unwrap_or("");
+
+            md.push_str(&format!("\n### @{} — {} — {}\n", reviewer, review_state, submitted_at));
+            if !review_body.is_empty() {
+                md.push_str(&format!("{}\n", review_body));
+            }
+        }
+
+        // Review comments (line-level)
+        let comments = comments_json.as_array().cloned().unwrap_or_default();
+        md.push_str(&format!("\n## Review Comments ({})\n", comments.len()));
+        for comment in &comments {
+            let commenter = comment
+                .get("user")
+                .and_then(|u| u.get("login"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let path = comment.get("path").and_then(|v| v.as_str()).unwrap_or("?");
+            let line = comment.get("line").and_then(|v| v.as_u64()).unwrap_or(0);
+            let comment_created = comment.get("created_at").and_then(|v| v.as_str()).unwrap_or("?");
+            let comment_body = comment.get("body").and_then(|v| v.as_str()).unwrap_or("");
+
+            md.push_str(&format!(
+                "\n### @{} on {}:{} — {}\n{}\n",
+                commenter, path, line, comment_created, comment_body
+            ));
+        }
+
+        Ok(md)
+    }
+
+    // -----------------------------------------------------------------------
+    // get_detail: Issues
+    // -----------------------------------------------------------------------
+
+    /// Fetch full detail for a GitHub Issue and render as Markdown.
+    pub async fn get_detail_issue(
+        &self,
+        owner: &str,
+        repo: &str,
+        number: u64,
+    ) -> Result<String, SearchError> {
+        let issue_path = format!("repos/{}/{}/issues/{}", owner, repo, number);
+        let comments_path = format!("repos/{}/{}/issues/{}/comments", owner, repo, number);
+
+        let issue_args = ["api", issue_path.as_str()];
+        let comments_args = ["api", comments_path.as_str()];
+
+        let (issue_result, comments_result) = tokio::join!(
+            self.run_gh(&issue_args),
+            self.run_gh(&comments_args),
+        );
+
+        let issue_json: serde_json::Value = serde_json::from_str(&issue_result?)
+            .map_err(|e| SearchError::Source {
+                source_name: "github".to_string(),
+                message: format!("Failed to parse issue JSON: {}", e),
+            })?;
+
+        let comments_json: serde_json::Value = serde_json::from_str(&comments_result?)
+            .map_err(|e| SearchError::Source {
+                source_name: "github".to_string(),
+                message: format!("Failed to parse comments JSON: {}", e),
+            })?;
+
+        // Extract issue metadata
+        let title = issue_json.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled");
+        let state = issue_json.get("state").and_then(|v| v.as_str()).unwrap_or("unknown");
+        let status = match state {
+            "open" => "Open",
+            "closed" => "Closed",
+            _ => state,
+        };
+        let author = issue_json
+            .get("user")
+            .and_then(|u| u.get("login"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let created_at = issue_json.get("created_at").and_then(|v| v.as_str()).unwrap_or("?");
+        let updated_at = issue_json.get("updated_at").and_then(|v| v.as_str()).unwrap_or("?");
+        let body = issue_json.get("body").and_then(|v| v.as_str()).unwrap_or("*No description provided.*");
+
+        // Labels
+        let labels: Vec<&str> = issue_json
+            .get("labels")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|l| l.get("name").and_then(|n| n.as_str()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let mut md = String::new();
+        md.push_str(&format!("# {}/{}#{}: {}\n\n", owner, repo, number, title));
+        md.push_str("| Field | Value |\n|---|---|\n");
+        md.push_str(&format!("| Status | {} |\n", status));
+        md.push_str(&format!("| Author | {} |\n", author));
+        if !labels.is_empty() {
+            md.push_str(&format!("| Labels | {} |\n", labels.join(", ")));
+        }
+        md.push_str(&format!("| Created | {} |\n", created_at));
+        md.push_str(&format!("| Updated | {} |\n", updated_at));
+
+        md.push_str(&format!("\n## Description\n\n{}\n", body));
+
+        // Comments
+        let comments = comments_json.as_array().cloned().unwrap_or_default();
+        md.push_str(&format!("\n## Comments ({})\n", comments.len()));
+        for comment in &comments {
+            let commenter = comment
+                .get("user")
+                .and_then(|u| u.get("login"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let comment_created = comment.get("created_at").and_then(|v| v.as_str()).unwrap_or("?");
+            let comment_body = comment.get("body").and_then(|v| v.as_str()).unwrap_or("");
+
+            md.push_str(&format!("\n### @{} — {}\n{}\n", commenter, comment_created, comment_body));
+        }
+
+        Ok(md)
+    }
+
     /// Build the query qualifier for org/repo scoping.
     fn build_scope_qualifier(&self) -> String {
         if !self.config.repos.is_empty() {

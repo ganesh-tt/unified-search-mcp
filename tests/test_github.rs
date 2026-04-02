@@ -11,6 +11,63 @@ use unified_search_mcp::sources::SearchSource;
 // Helpers
 // ===========================================================================
 
+/// Create an executable shell script that routes responses based on the gh
+/// API endpoint being called. Supports search/issues, search/code, auth,
+/// and individual resource endpoints (for get_detail tests).
+fn make_detail_gh_script(endpoint_responses: &[(&str, &str)]) -> NamedTempFile {
+    let mut script = NamedTempFile::new().expect("Failed to create temp script");
+
+    let mut case_arms = String::new();
+    for (pattern, response) in endpoint_responses {
+        // Use a unique heredoc label per arm to avoid collisions
+        let label = format!(
+            "RESP_{}",
+            pattern
+                .replace('/', "_")
+                .replace('.', "_")
+                .replace('*', "STAR")
+                .to_uppercase()
+        );
+        case_arms.push_str(&format!(
+            r#"    *{pattern}*)
+        cat << '{label}'
+{response}
+{label}
+        exit 0
+        ;;
+"#,
+            pattern = pattern,
+            label = label,
+            response = response,
+        ));
+    }
+
+    writeln!(
+        script,
+        r#"#!/bin/bash
+ARGS="$*"
+case "$ARGS" in
+{case_arms}
+    *)
+        echo "Unknown endpoint: $ARGS" >&2
+        exit 1
+        ;;
+esac
+"#,
+        case_arms = case_arms,
+    )
+    .expect("Failed to write script");
+
+    let path = script.path().to_path_buf();
+    let mut perms = std::fs::metadata(&path)
+        .expect("Failed to read metadata")
+        .permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&path, perms).expect("Failed to set permissions");
+
+    script
+}
+
 /// Create an executable shell script in a temp file that echoes the given
 /// content to stdout and exits with the given code. The script inspects its
 /// arguments to route responses for different `gh` subcommands.
@@ -492,4 +549,240 @@ async fn search_with_no_orgs_or_repos() {
     let results = source.search(&make_query("global test")).await.unwrap();
     assert_eq!(results.len(), 1);
     assert!(results[0].title.contains("Global result"));
+}
+
+// ===========================================================================
+// Test 13: get_detail_pr_returns_full_markdown
+// ===========================================================================
+
+#[tokio::test]
+async fn get_detail_pr_returns_full_markdown() {
+    let pr_json = r#"{
+        "title": "Fix broadcast OOM in Spark driver",
+        "state": "closed",
+        "merged_at": "2026-03-30T14:00:00Z",
+        "user": {"login": "ganesh-tt"},
+        "head": {"ref": "fix/broadcast-oom"},
+        "base": {"ref": "develop"},
+        "created_at": "2026-03-28T10:00:00Z",
+        "updated_at": "2026-03-30T14:00:00Z",
+        "additions": 150,
+        "deletions": 30,
+        "changed_files": 5,
+        "body": "This PR fixes the broadcast OOM by adding a bounded queue with backpressure."
+    }"#;
+
+    let reviews_json = r#"[
+        {
+            "user": {"login": "reviewer1"},
+            "state": "APPROVED",
+            "body": "LGTM, good fix!",
+            "submitted_at": "2026-03-29T12:00:00Z"
+        },
+        {
+            "user": {"login": "reviewer2"},
+            "state": "CHANGES_REQUESTED",
+            "body": "Needs a unit test",
+            "submitted_at": "2026-03-29T10:00:00Z"
+        }
+    ]"#;
+
+    let comments_json = r#"[
+        {
+            "user": {"login": "reviewer1"},
+            "body": "Consider using a ring buffer here",
+            "path": "src/engine/broadcast.rs",
+            "line": 42,
+            "created_at": "2026-03-29T11:00:00Z"
+        }
+    ]"#;
+
+    let script = make_detail_gh_script(&[
+        ("pulls/123/reviews", reviews_json),
+        ("pulls/123/comments", comments_json),
+        ("pulls/123", pr_json),
+    ]);
+    let config = make_config(script.path().to_str().unwrap());
+    let source = GitHubSource::new(config);
+
+    let md = source
+        .get_detail_pr("tookitaki", "product-amls", 123)
+        .await
+        .unwrap();
+
+    // Title
+    assert!(md.contains("tookitaki/product-amls#123: Fix broadcast OOM in Spark driver"));
+
+    // Status — merged_at is present so status should be "Merged"
+    assert!(md.contains("| Status | Merged |"));
+
+    // Author
+    assert!(md.contains("| Author | ganesh-tt |"));
+
+    // Branch
+    assert!(md.contains("| Branch | fix/broadcast-oom → develop |"));
+
+    // Changes
+    assert!(md.contains("+150 -30 across 5 files"));
+
+    // Description
+    assert!(md.contains("## Description"));
+    assert!(md.contains("bounded queue with backpressure"));
+
+    // Reviews
+    assert!(md.contains("## Reviews (2)"));
+    assert!(md.contains("@reviewer1 — APPROVED"));
+    assert!(md.contains("LGTM, good fix!"));
+    assert!(md.contains("@reviewer2 — CHANGES_REQUESTED"));
+    assert!(md.contains("Needs a unit test"));
+
+    // Review comments
+    assert!(md.contains("## Review Comments (1)"));
+    assert!(md.contains("@reviewer1 on src/engine/broadcast.rs:42"));
+    assert!(md.contains("Consider using a ring buffer here"));
+}
+
+// ===========================================================================
+// Test 14: get_detail_issue_returns_full_markdown
+// ===========================================================================
+
+#[tokio::test]
+async fn get_detail_issue_returns_full_markdown() {
+    let issue_json = r#"{
+        "title": "Spark driver OOM on large datasets",
+        "state": "open",
+        "user": {"login": "ganesh-tt"},
+        "created_at": "2026-03-25T09:00:00Z",
+        "updated_at": "2026-03-28T10:00:00Z",
+        "body": "When processing datasets > 10GB, the Spark driver runs out of memory.",
+        "labels": [
+            {"name": "bug"},
+            {"name": "priority:high"}
+        ]
+    }"#;
+
+    let comments_json = r#"[
+        {
+            "user": {"login": "teammate1"},
+            "body": "I can reproduce this on the performance cluster.",
+            "created_at": "2026-03-26T10:00:00Z"
+        },
+        {
+            "user": {"login": "ganesh-tt"},
+            "body": "Root cause: unbounded broadcast queue. Will submit a fix PR.",
+            "created_at": "2026-03-27T15:00:00Z"
+        }
+    ]"#;
+
+    let script = make_detail_gh_script(&[
+        ("issues/456/comments", comments_json),
+        ("issues/456", issue_json),
+    ]);
+    let config = make_config(script.path().to_str().unwrap());
+    let source = GitHubSource::new(config);
+
+    let md = source
+        .get_detail_issue("tookitaki", "product-amls", 456)
+        .await
+        .unwrap();
+
+    // Title
+    assert!(md.contains("tookitaki/product-amls#456: Spark driver OOM on large datasets"));
+
+    // Status
+    assert!(md.contains("| Status | Open |"));
+
+    // Author
+    assert!(md.contains("| Author | ganesh-tt |"));
+
+    // Labels
+    assert!(md.contains("| Labels | bug, priority:high |"));
+
+    // Description
+    assert!(md.contains("## Description"));
+    assert!(md.contains("datasets > 10GB"));
+
+    // Comments
+    assert!(md.contains("## Comments (2)"));
+    assert!(md.contains("@teammate1"));
+    assert!(md.contains("reproduce this on the performance cluster"));
+    assert!(md.contains("@ganesh-tt"));
+    assert!(md.contains("unbounded broadcast queue"));
+}
+
+// ===========================================================================
+// Test 15: get_detail_pr_open_status
+// ===========================================================================
+
+#[tokio::test]
+async fn get_detail_pr_open_status() {
+    let pr_json = r#"{
+        "title": "WIP: New feature",
+        "state": "open",
+        "merged_at": null,
+        "user": {"login": "dev1"},
+        "head": {"ref": "feature/new"},
+        "base": {"ref": "develop"},
+        "created_at": "2026-04-01T10:00:00Z",
+        "updated_at": "2026-04-01T10:00:00Z",
+        "additions": 10,
+        "deletions": 2,
+        "changed_files": 1,
+        "body": "Work in progress"
+    }"#;
+
+    let script = make_detail_gh_script(&[
+        ("pulls/99/reviews", "[]"),
+        ("pulls/99/comments", "[]"),
+        ("pulls/99", pr_json),
+    ]);
+    let config = make_config(script.path().to_str().unwrap());
+    let source = GitHubSource::new(config);
+
+    let md = source
+        .get_detail_pr("org", "repo", 99)
+        .await
+        .unwrap();
+
+    // Open PR should show "Open", not "Merged"
+    assert!(md.contains("| Status | Open |"));
+    // Should NOT contain Merged row
+    assert!(!md.contains("| Merged |"));
+    // Empty reviews and comments
+    assert!(md.contains("## Reviews (0)"));
+    assert!(md.contains("## Review Comments (0)"));
+}
+
+// ===========================================================================
+// Test 16: get_detail_issue_no_labels
+// ===========================================================================
+
+#[tokio::test]
+async fn get_detail_issue_no_labels() {
+    let issue_json = r#"{
+        "title": "Simple issue",
+        "state": "closed",
+        "user": {"login": "dev1"},
+        "created_at": "2026-04-01T10:00:00Z",
+        "updated_at": "2026-04-01T10:00:00Z",
+        "body": "A simple issue without labels.",
+        "labels": []
+    }"#;
+
+    let script = make_detail_gh_script(&[
+        ("issues/1/comments", "[]"),
+        ("issues/1", issue_json),
+    ]);
+    let config = make_config(script.path().to_str().unwrap());
+    let source = GitHubSource::new(config);
+
+    let md = source
+        .get_detail_issue("org", "repo", 1)
+        .await
+        .unwrap();
+
+    assert!(md.contains("| Status | Closed |"));
+    // No labels row when labels array is empty
+    assert!(!md.contains("| Labels |"));
+    assert!(md.contains("## Comments (0)"));
 }
