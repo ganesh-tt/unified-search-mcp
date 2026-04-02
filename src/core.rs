@@ -65,8 +65,10 @@ impl SearchOrchestrator {
 
             let handle = tokio::spawn(async move {
                 let name = source.name().to_string();
+                let source_start = std::time::Instant::now();
                 let result = tokio::time::timeout(timeout_dur, source.search(&q)).await;
-                (name, result)
+                let latency_ms = source_start.elapsed().as_millis() as u64;
+                (name, result, latency_ms)
             });
             handles.push(handle);
         }
@@ -74,19 +76,47 @@ impl SearchOrchestrator {
         // Step 3: Collect results
         let mut all_results: Vec<SearchResult> = Vec::new();
         let mut warnings: Vec<String> = Vec::new();
+        let mut per_source_stats: Vec<crate::models::PerSourceStats> = Vec::new();
 
         for handle in handles {
             match handle.await {
-                Ok((source_name, timeout_result)) => match timeout_result {
+                Ok((source_name, timeout_result, latency_ms)) => match timeout_result {
                     Ok(search_result) => match search_result {
                         Ok(results) => {
+                            let count = results.len();
+                            let comment_count: usize = results.iter()
+                                .filter_map(|r| r.metadata.get("comment_count"))
+                                .filter_map(|c| c.parse::<usize>().ok())
+                                .sum();
+                            per_source_stats.push(crate::models::PerSourceStats {
+                                source: source_name,
+                                latency_ms,
+                                result_count: count,
+                                comment_count,
+                                error: None,
+                            });
                             all_results.extend(results);
                         }
                         Err(e) => {
-                            warnings.push(format!("Source '{}' failed: {}", source_name, e));
+                            let msg = format!("{}", e);
+                            per_source_stats.push(crate::models::PerSourceStats {
+                                source: source_name.clone(),
+                                latency_ms,
+                                result_count: 0,
+                                comment_count: 0,
+                                error: Some(msg.clone()),
+                            });
+                            warnings.push(format!("Source '{}' failed: {}", source_name, msg));
                         }
                     },
                     Err(_) => {
+                        per_source_stats.push(crate::models::PerSourceStats {
+                            source: source_name.clone(),
+                            latency_ms: self.config.timeout_seconds * 1000,
+                            result_count: 0,
+                            comment_count: 0,
+                            error: Some("timeout".to_string()),
+                        });
                         warnings.push(format!(
                             "Source '{}' timed out after {}s",
                             source_name, self.config.timeout_seconds
@@ -95,7 +125,7 @@ impl SearchOrchestrator {
                 },
                 Err(_join_error) => {
                     // Panic caught by tokio::spawn
-                    warnings.push(format!("Source task panicked or crashed"));
+                    warnings.push("Source task panicked or crashed".to_string());
                 }
             }
         }
@@ -170,7 +200,7 @@ impl SearchOrchestrator {
             warnings,
             total_sources_queried,
             query_time_ms,
-            per_source_stats: vec![],
+            per_source_stats,
         }
     }
 

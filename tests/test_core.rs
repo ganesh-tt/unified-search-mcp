@@ -745,6 +745,44 @@ async fn empty_sources_list() {
 }
 
 // ===========================================================================
+// Test 12b: per_source_stats_populated
+// ===========================================================================
+
+#[tokio::test]
+async fn per_source_stats_populated() {
+    let source_a = MockSource::new(
+        "slack",
+        vec![make_result("slack", "msg1", 0.9)],
+    );
+    let source_b = MockSource::new(
+        "jira",
+        vec![
+            make_result("jira", "j1", 0.8),
+            make_result("jira", "j2", 0.6),
+        ],
+    );
+
+    let orchestrator = SearchOrchestrator::new(
+        vec![boxed(source_a), boxed(source_b)],
+        default_config(),
+    );
+
+    let response = orchestrator.search(&query("test")).await;
+
+    assert_eq!(
+        response.per_source_stats.len(), 2,
+        "Expected 2 per-source stats entries"
+    );
+
+    let slack_stats = response.per_source_stats.iter().find(|s| s.source == "slack").unwrap();
+    assert_eq!(slack_stats.result_count, 1);
+    assert!(slack_stats.error.is_none());
+
+    let jira_stats = response.per_source_stats.iter().find(|s| s.source == "jira").unwrap();
+    assert_eq!(jira_stats.result_count, 2);
+}
+
+// ===========================================================================
 // Test 13: panic_source_doesnt_crash
 // ===========================================================================
 
