@@ -509,6 +509,57 @@ async fn relevance_from_score() {
 }
 
 // ===========================================================================
+// Test 13: get_detail_thread_returns_full_markdown
+// ===========================================================================
+
+#[tokio::test]
+async fn get_detail_thread_returns_full_markdown() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/conversations.history"))
+        .and(query_param("channel", "C06ABC123"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            include_str!("../fixtures/slack/conversation_history.json"),
+            "application/json",
+        ))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/conversations.replies"))
+        .and(query_param("channel", "C06ABC123"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            include_str!("../fixtures/slack/conversation_replies.json"),
+            "application/json",
+        ))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/conversations.info"))
+        .and(query_param("channel", "C06ABC123"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            include_str!("../fixtures/slack/conversation_info.json"),
+            "application/json",
+        ))
+        .mount(&server)
+        .await;
+
+    let config = test_config(&server.uri());
+    let source = SlackSource::new(config);
+    let result = source
+        .get_detail_thread("C06ABC123", "1712000000.123456")
+        .await
+        .unwrap();
+
+    assert!(result.contains("engineering"), "Missing channel name");
+    assert!(result.contains("broadcast threshold"), "Missing original message");
+    assert!(result.contains("800 msg/s before OOM"), "Missing reply content");
+    assert!(result.contains("circuit breaker at 750"), "Missing second reply");
+}
+
+// ===========================================================================
 // Test 12: timestamp_from_ts_field
 // ===========================================================================
 

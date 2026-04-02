@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "messages": [
+    {
+      "type": "message",
+      "user": "U123",
+      "text": "We need to decide on the broadcast threshold. Current thinking is 500 msg/s.",
+      "ts": "1712000000.123456"
+    }
+  ],
+  "has_more": false
+}

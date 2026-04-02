@@ -1,0 +1,24 @@
+{
+  "ok": true,
+  "messages": [
+    {
+      "type": "message",
+      "user": "U123",
+      "text": "We need to decide on the broadcast threshold. Current thinking is 500 msg/s.",
+      "ts": "1712000000.123456"
+    },
+    {
+      "type": "message",
+      "user": "U456",
+      "text": "That sounds reasonable. Load tests show we can handle up to 800 msg/s before OOM.",
+      "ts": "1712000100.000000"
+    },
+    {
+      "type": "message",
+      "user": "U789",
+      "text": "Let's go with 500 msg/s with a circuit breaker at 750.",
+      "ts": "1712000200.000000"
+    }
+  ],
+  "has_more": false
+}

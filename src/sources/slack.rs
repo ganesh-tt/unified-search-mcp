@@ -55,6 +55,135 @@ impl SlackSource {
             .expect("Failed to build HTTP client");
         Self { config, client }
     }
+
+    /// Fetch a full Slack thread and format it as Markdown.
+    ///
+    /// Calls three Slack API endpoints:
+    /// - `conversations.info` — to get the channel name
+    /// - `conversations.replies` — to get all messages in the thread
+    ///
+    /// Returns a Markdown string with the channel name, original message,
+    /// thread replies, and a deduplicated participant list.
+    pub async fn get_detail_thread(
+        &self,
+        channel: &str,
+        ts: &str,
+    ) -> Result<String, SearchError> {
+        // --- 1. Fetch channel info ---
+        let info_url = format!("{}/api/conversations.info", self.config.base_url);
+        let info_resp = self
+            .client
+            .get(&info_url)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.config.user_token),
+            )
+            .query(&[("channel", channel)])
+            .send()
+            .await
+            .map_err(SearchError::Http)?;
+
+        let info_body: SlackConversationInfoResponse =
+            info_resp.json().await.map_err(|e| SearchError::Source {
+                source_name: "slack".to_string(),
+                message: format!("Failed to parse conversations.info response: {e}"),
+            })?;
+
+        let channel_name = info_body
+            .channel
+            .and_then(|c| c.name)
+            .unwrap_or_else(|| channel.to_string());
+
+        // --- 2. Fetch thread replies ---
+        let replies_url = format!("{}/api/conversations.replies", self.config.base_url);
+        let replies_resp = self
+            .client
+            .get(&replies_url)
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.config.user_token),
+            )
+            .query(&[("channel", channel), ("ts", ts), ("limit", "200")])
+            .send()
+            .await
+            .map_err(SearchError::Http)?;
+
+        let replies_body: SlackConversationResponse =
+            replies_resp.json().await.map_err(|e| SearchError::Source {
+                source_name: "slack".to_string(),
+                message: format!("Failed to parse conversations.replies response: {e}"),
+            })?;
+
+        if !replies_body.ok {
+            return Err(SearchError::Source {
+                source_name: "slack".to_string(),
+                message: format!(
+                    "conversations.replies failed: {}",
+                    replies_body.error.unwrap_or_else(|| "unknown_error".to_string())
+                ),
+            });
+        }
+
+        let messages = replies_body.messages.unwrap_or_default();
+
+        // --- 3. Build Markdown ---
+        let mut md = String::new();
+
+        // Header
+        md.push_str(&format!("# Slack Thread in #{channel_name}\n\n"));
+
+        // Original message (first in the list)
+        if let Some(first) = messages.first() {
+            let user_id = first.user.as_deref().unwrap_or("unknown");
+            let text = first.text.as_deref().unwrap_or("");
+            let date_str = first
+                .ts
+                .as_deref()
+                .and_then(parse_slack_ts)
+                .map(|dt| dt.format("%Y-%m-%d %H:%M UTC").to_string())
+                .unwrap_or_else(|| "unknown date".to_string());
+
+            md.push_str(&format!("**Started by**: {user_id} -- {date_str}\n\n"));
+            md.push_str("## Original Message\n\n");
+            md.push_str(text);
+            md.push_str("\n\n");
+        }
+
+        // Replies (skip first message which is the parent)
+        let replies: Vec<&SlackConversationMessage> = messages.iter().skip(1).collect();
+        md.push_str(&format!("## Thread Replies ({})\n\n", replies.len()));
+
+        for reply in &replies {
+            let user_id = reply.user.as_deref().unwrap_or("unknown");
+            let text = reply.text.as_deref().unwrap_or("");
+            let date_str = reply
+                .ts
+                .as_deref()
+                .and_then(parse_slack_ts)
+                .map(|dt| dt.format("%Y-%m-%d %H:%M UTC").to_string())
+                .unwrap_or_else(|| "unknown date".to_string());
+
+            md.push_str(&format!("### {user_id} -- {date_str}\n"));
+            md.push_str(text);
+            md.push_str("\n\n");
+        }
+
+        // Participants (deduplicated, sorted)
+        let mut participants: Vec<String> = messages
+            .iter()
+            .filter_map(|m| m.user.clone())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        participants.sort();
+
+        md.push_str("## Participants\n\n");
+        for p in &participants {
+            md.push_str(&format!("- {p}\n"));
+        }
+
+        Ok(md)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -92,6 +221,37 @@ struct SlackChannel {
 struct SlackAuthTestResponse {
     ok: bool,
     error: Option<String>,
+}
+
+/// Response from conversations.replies and conversations.history
+#[derive(Debug, Deserialize)]
+struct SlackConversationResponse {
+    ok: bool,
+    error: Option<String>,
+    messages: Option<Vec<SlackConversationMessage>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SlackConversationMessage {
+    #[serde(rename = "type")]
+    msg_type: Option<String>,
+    user: Option<String>,
+    text: Option<String>,
+    ts: Option<String>,
+}
+
+/// Response from conversations.info
+#[derive(Debug, Deserialize)]
+struct SlackConversationInfoResponse {
+    ok: bool,
+    error: Option<String>,
+    channel: Option<SlackChannelInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SlackChannelInfo {
+    id: Option<String>,
+    name: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

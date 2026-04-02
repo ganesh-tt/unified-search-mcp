@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "channel": {
+    "id": "C06ABC123",
+    "name": "engineering",
+    "is_channel": true,
+    "topic": {"value": "Engineering discussions"},
+    "purpose": {"value": "General engineering chat"}
+  }
+}
