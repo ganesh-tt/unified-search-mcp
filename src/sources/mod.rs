@@ -5,6 +5,7 @@ pub mod slack;
 pub mod confluence;
 pub mod jira;
 pub mod local_text;
+pub mod confluence_markdown;
 // pub mod local_vector; // Phase 2
 
 #[async_trait]
