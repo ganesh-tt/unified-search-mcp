@@ -565,6 +565,90 @@ async fn query_with_jql_operators_literal() {
 }
 
 // ===========================================================================
+// Test 18: search_extracts_comments_from_response
+// ===========================================================================
+
+#[tokio::test]
+async fn search_extracts_comments_from_response() {
+    let server = MockServer::start().await;
+
+    let body = include_str!("../fixtures/jira/search_with_comments.json");
+
+    Mock::given(method("GET"))
+        .and(path("/rest/api/3/search"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(body, "application/json"))
+        .mount(&server)
+        .await;
+
+    let config = make_config(&server.uri());
+    let source = JiraSource::new(config);
+    let results = source.search(&make_query("broadcast")).await.unwrap();
+
+    assert_eq!(results.len(), 1);
+
+    // Check comment_count in metadata
+    assert_eq!(
+        results[0].metadata.get("comment_count"),
+        Some(&"3".to_string()),
+        "Expected comment_count=3 in metadata"
+    );
+
+    // Snippet should contain comments section
+    assert!(
+        results[0].snippet.contains("Comments (3"),
+        "Snippet should contain 'Comments (3', got:\n{}",
+        results[0].snippet
+    );
+
+    // Should contain most recent comments (latest first)
+    assert!(
+        results[0].snippet.contains("Charlie"),
+        "Snippet should contain latest commenter 'Charlie'"
+    );
+    assert!(
+        results[0].snippet.contains("Verified on staging"),
+        "Snippet should contain latest comment text"
+    );
+}
+
+// ===========================================================================
+// Test 19: search_handles_empty_comments
+// ===========================================================================
+
+#[tokio::test]
+async fn search_handles_empty_comments() {
+    let server = MockServer::start().await;
+
+    // Existing helper creates issues with empty comment arrays
+    let issues = vec![jira_issue(
+        "FIN-200",
+        "No comments here",
+        Some(adf_text("Description text")),
+        "Open",
+        None,
+        "2026-03-15T10:00:00.000+0000",
+    )];
+
+    Mock::given(method("GET"))
+        .and(path("/rest/api/3/search"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(jira_search_response(issues)))
+        .mount(&server)
+        .await;
+
+    let config = make_config(&server.uri());
+    let source = JiraSource::new(config);
+    let results = source.search(&make_query("test")).await.unwrap();
+
+    assert_eq!(results.len(), 1);
+    let count = results[0].metadata.get("comment_count").map(|s| s.as_str()).unwrap_or("0");
+    assert_eq!(count, "0");
+    assert!(
+        !results[0].snippet.contains("Comments ("),
+        "Snippet should not have comments section when there are none"
+    );
+}
+
+// ===========================================================================
 // Test 17: time_filter_after_before
 // ===========================================================================
 

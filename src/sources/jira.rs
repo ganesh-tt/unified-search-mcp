@@ -249,7 +249,7 @@ impl SearchSource for JiraSource {
             let title = format!("{}: {}", key, summary);
 
             // Extract description text from ADF format
-            let snippet = if let Some(desc) = fields_obj.get("description") {
+            let mut snippet = if let Some(desc) = fields_obj.get("description") {
                 if desc.is_null() {
                     String::new()
                 } else {
@@ -298,6 +298,54 @@ impl SearchSource for JiraSource {
                 .and_then(|n| n.as_str())
             {
                 metadata.insert("assignee".to_string(), assignee_name.to_string());
+            }
+
+            // Extract comments from the search response
+            let comments = fields_obj
+                .get("comment")
+                .and_then(|c| c.get("comments"))
+                .and_then(|c| c.as_array())
+                .cloned()
+                .unwrap_or_default();
+
+            let comment_count = fields_obj
+                .get("comment")
+                .and_then(|c| c.get("total"))
+                .and_then(|t| t.as_u64())
+                .unwrap_or(comments.len() as u64);
+
+            metadata.insert("comment_count".to_string(), comment_count.to_string());
+
+            // Append latest 3 comments to snippet (most recent first)
+            if !comments.is_empty() {
+                let mut comment_texts: Vec<(String, String, String)> = Vec::new();
+                for comment in comments.iter().rev().take(3) {
+                    let author = comment
+                        .get("author")
+                        .and_then(|a| a.get("displayName"))
+                        .and_then(|n| n.as_str())
+                        .unwrap_or("Unknown");
+                    let created = comment
+                        .get("created")
+                        .and_then(|c| c.as_str())
+                        .and_then(|s| {
+                            DateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.3f%z")
+                                .ok()
+                                .map(|dt| dt.format("%Y-%m-%d").to_string())
+                        })
+                        .unwrap_or_default();
+                    let body_raw = comment
+                        .get("body")
+                        .map(|b| Self::extract_adf_text(b))
+                        .unwrap_or_default();
+                    let body = Self::truncate_description(&body_raw, 150);
+                    comment_texts.push((author.to_string(), created, body));
+                }
+
+                snippet.push_str(&format!("\n---\nComments ({} total):", comment_count));
+                for (author, date, body) in &comment_texts {
+                    snippet.push_str(&format!("\n[{}, {}]: {}", author, date, body));
+                }
             }
 
             results.push(SearchResult {

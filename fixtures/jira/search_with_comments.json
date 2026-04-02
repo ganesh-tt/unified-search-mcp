@@ -1,0 +1,57 @@
+{
+  "startAt": 0,
+  "maxResults": 25,
+  "total": 1,
+  "issues": [
+    {
+      "key": "FIN-100",
+      "fields": {
+        "summary": "Fix OOM in broadcast",
+        "description": {
+          "type": "doc",
+          "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Broadcast was unbounded"}]}]
+        },
+        "status": {"name": "In Progress"},
+        "assignee": {"displayName": "Alice"},
+        "updated": "2026-03-15T10:00:00.000+0000",
+        "comment": {
+          "comments": [
+            {
+              "id": "10001",
+              "author": {"displayName": "Bob"},
+              "body": {
+                "type": "doc",
+                "content": [{"type": "paragraph", "content": [{"type": "text", "text": "I've reproduced this on staging. The broadcast queue grows without bound when the consumer is slower than the producer."}]}]
+              },
+              "created": "2026-03-14T09:00:00.000+0000",
+              "updated": "2026-03-14T09:00:00.000+0000"
+            },
+            {
+              "id": "10002",
+              "author": {"displayName": "Alice"},
+              "body": {
+                "type": "doc",
+                "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Fix deployed. Added backpressure with a bounded channel of 1000 elements."}]}]
+              },
+              "created": "2026-03-15T08:00:00.000+0000",
+              "updated": "2026-03-15T08:00:00.000+0000"
+            },
+            {
+              "id": "10003",
+              "author": {"displayName": "Charlie"},
+              "body": {
+                "type": "doc",
+                "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Verified on staging. OOM no longer occurs under load test."}]}]
+              },
+              "created": "2026-03-15T14:00:00.000+0000",
+              "updated": "2026-03-15T14:00:00.000+0000"
+            }
+          ],
+          "maxResults": 3,
+          "total": 3,
+          "startAt": 0
+        }
+      }
+    }
+  ]
+}
