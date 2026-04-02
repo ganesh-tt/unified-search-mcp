@@ -239,6 +239,7 @@ fn unified_response_with_warnings() {
         total_sources_queried: 3,
         query_time_ms: 450,
         per_source_stats: vec![],
+        cache_hit: false,
     };
 
     let json_val: serde_json::Value = serde_json::to_value(&response).expect("serialize");
@@ -365,6 +366,7 @@ fn unified_response_includes_per_source_stats() {
                 error: None,
             },
         ],
+        cache_hit: false,
     };
 
     assert_eq!(response.per_source_stats.len(), 1);

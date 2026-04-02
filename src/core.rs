@@ -201,6 +201,7 @@ impl SearchOrchestrator {
             total_sources_queried,
             query_time_ms,
             per_source_stats,
+            cache_hit: false,
         }
     }
 

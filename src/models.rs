@@ -104,6 +104,8 @@ pub struct UnifiedSearchResponse {
     pub total_sources_queried: usize,
     pub query_time_ms: u64,
     pub per_source_stats: Vec<PerSourceStats>,
+    #[serde(default)]
+    pub cache_hit: bool,
 }
 
 #[derive(thiserror::Error, Debug)]
