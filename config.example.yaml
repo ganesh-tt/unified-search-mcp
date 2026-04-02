@@ -3,6 +3,7 @@ server:
   max_results: 20
   timeout_seconds: 10
   log_level: "info"
+  metrics_path: "~/.unified-search/metrics.jsonl"
 
 sources:
   slack:
