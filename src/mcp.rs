@@ -86,7 +86,7 @@ impl McpServer {
 
     /// Search across all enabled sources in parallel.
     /// Returns a ranked Markdown table of results.
-    #[tool(description = "Search across Slack messages, Confluence pages, JIRA tickets, and local code/docs in parallel. Use this when looking for decisions, discussions, documentation, or code related to a topic. Returns a ranked Markdown table with results from all sources. Example queries: 'broadcast threshold decision', 'auth middleware migration', 'FIN-10384 context'.")]
+    #[tool(description = "Search across Slack messages, Confluence pages, JIRA tickets (including comments), and local code/docs in parallel. Use this when looking for decisions, discussions, documentation, or code related to a topic. Also use instead of jira_get or conf_get for searching. Returns a ranked Markdown table with results from all sources. Example queries: 'broadcast threshold decision', 'auth middleware migration', 'FIN-10384 context'.")]
     async fn unified_search(
         &self,
         Parameters(params): Parameters<UnifiedSearchParams>,
@@ -144,7 +144,10 @@ impl ServerHandler for McpServer {
                  and local code/docs in parallel — use it for questions like 'what did we decide \
                  about X?', 'where is Y documented?', 'who worked on Z?', 'find discussions \
                  about X', or any cross-system lookup. Use search_source only when you know the \
-                 answer is in one specific system.",
+                 answer is in one specific system. \
+                 Use get_detail to fetch full content for a specific JIRA ticket (FIN-1234), \
+                 Confluence page, or Slack thread URL — this replaces jira_get, conf_get, and \
+                 direct Slack MCP calls for single-item lookups.",
             )
             .with_server_info(
                 Implementation::new("unified-search-mcp", env!("CARGO_PKG_VERSION"))
