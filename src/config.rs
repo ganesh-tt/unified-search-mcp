@@ -5,6 +5,7 @@ use serde::Deserialize;
 
 use crate::models::SearchError;
 use crate::sources::confluence::ConfluenceConfig;
+use crate::sources::github::GitHubConfig;
 use crate::sources::jira::JiraConfig;
 use crate::sources::local_text::LocalTextConfig;
 use crate::sources::slack::SlackConfig;
@@ -48,6 +49,7 @@ pub struct SourcesConfig {
     pub confluence: Option<ConfluenceSourceConfig>,
     pub jira: Option<JiraSourceConfig>,
     pub local_text: Option<LocalTextSourceConfig>,
+    pub github: Option<GitHubSourceConfig>,
 }
 
 #[derive(Debug, Clone)]
@@ -78,6 +80,13 @@ pub struct LocalTextSourceConfig {
     pub config: LocalTextConfig,
 }
 
+#[derive(Debug, Clone)]
+pub struct GitHubSourceConfig {
+    pub enabled: bool,
+    pub weight: f32,
+    pub config: GitHubConfig,
+}
+
 // ===========================================================================
 // Raw deserialization types (serde_yml)
 // ===========================================================================
@@ -106,6 +115,7 @@ struct RawSourcesConfig {
     confluence: Option<RawConfluenceConfig>,
     jira: Option<RawJiraConfig>,
     local_text: Option<RawLocalTextConfig>,
+    github: Option<RawGitHubConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -170,6 +180,20 @@ struct RawLocalTextConfig {
     exclude_patterns: Vec<String>,
     #[serde(default = "default_max_file_size")]
     max_file_size_bytes: u64,
+    #[serde(default = "default_weight")]
+    weight: f32,
+    #[serde(default = "default_source_max_results")]
+    max_results: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawGitHubConfig {
+    #[serde(default)]
+    enabled: bool,
+    #[serde(default)]
+    orgs: Vec<String>,
+    #[serde(default)]
+    repos: Vec<String>,
     #[serde(default = "default_weight")]
     weight: f32,
     #[serde(default = "default_source_max_results")]
@@ -345,11 +369,25 @@ fn build_sources(raw: RawSourcesConfig) -> Result<SourcesConfig, SearchError> {
         }
     });
 
+    let github = raw.github.map(|g| {
+        GitHubSourceConfig {
+            enabled: g.enabled,
+            weight: g.weight,
+            config: GitHubConfig {
+                orgs: g.orgs,
+                repos: g.repos,
+                max_results: g.max_results,
+                gh_path: "gh".to_string(),
+            },
+        }
+    });
+
     let config = SourcesConfig {
         slack,
         confluence,
         jira,
         local_text,
+        github,
     };
 
     // Validate: enabled sources must have required fields (non-empty after env var interpolation)
