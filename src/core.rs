@@ -170,6 +170,7 @@ impl SearchOrchestrator {
             warnings,
             total_sources_queried,
             query_time_ms,
+            per_source_stats: vec![],
         }
     }
 

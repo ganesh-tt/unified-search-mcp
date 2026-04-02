@@ -89,11 +89,21 @@ impl fmt::Display for HealthStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerSourceStats {
+    pub source: String,
+    pub latency_ms: u64,
+    pub result_count: usize,
+    pub comment_count: usize,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnifiedSearchResponse {
     pub results: Vec<SearchResult>,
     pub warnings: Vec<String>,
     pub total_sources_queried: usize,
     pub query_time_ms: u64,
+    pub per_source_stats: Vec<PerSourceStats>,
 }
 
 #[derive(thiserror::Error, Debug)]

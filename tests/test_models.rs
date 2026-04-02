@@ -238,6 +238,7 @@ fn unified_response_with_warnings() {
         warnings: vec!["Slack source timed out".to_string()],
         total_sources_queried: 3,
         query_time_ms: 450,
+        per_source_stats: vec![],
     };
 
     let json_val: serde_json::Value = serde_json::to_value(&response).expect("serialize");
@@ -317,6 +318,60 @@ fn search_result_edge_relevance_one() {
 // ---------------------------------------------------------------------------
 // 11. Empty metadata serializes as {}
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// 12. PerSourceStats serializes correctly
+// ---------------------------------------------------------------------------
+
+#[test]
+fn per_source_stats_serializes() {
+    use unified_search_mcp::models::PerSourceStats;
+
+    let stats = PerSourceStats {
+        source: "jira".to_string(),
+        latency_ms: 180,
+        result_count: 8,
+        comment_count: 24,
+        error: None,
+    };
+
+    let json = serde_json::to_value(&stats).unwrap();
+    assert_eq!(json["source"], "jira");
+    assert_eq!(json["latency_ms"], 180);
+    assert_eq!(json["result_count"], 8);
+    assert_eq!(json["comment_count"], 24);
+    assert!(json["error"].is_null());
+}
+
+// ---------------------------------------------------------------------------
+// 13. UnifiedSearchResponse includes per_source_stats field
+// ---------------------------------------------------------------------------
+
+#[test]
+fn unified_response_includes_per_source_stats() {
+    use unified_search_mcp::models::{UnifiedSearchResponse, PerSourceStats};
+
+    let response = UnifiedSearchResponse {
+        results: vec![],
+        warnings: vec![],
+        total_sources_queried: 2,
+        query_time_ms: 500,
+        per_source_stats: vec![
+            PerSourceStats {
+                source: "slack".to_string(),
+                latency_ms: 300,
+                result_count: 5,
+                comment_count: 10,
+                error: None,
+            },
+        ],
+    };
+
+    assert_eq!(response.per_source_stats.len(), 1);
+    assert_eq!(response.per_source_stats[0].source, "slack");
+}
+
+
 
 #[test]
 fn search_result_empty_metadata() {
