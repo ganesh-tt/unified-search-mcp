@@ -316,6 +316,7 @@ impl UnifiedSearchServer {
             SourceType::Jira => "jira",
             SourceType::Confluence => "confluence",
             SourceType::Slack => "slack",
+            SourceType::GitHub => "github",
         };
 
         // Execute the detail fetch; capture (result, error, comment_count)
@@ -398,6 +399,11 @@ impl UnifiedSearchServer {
                     (msg.clone(), Some(msg))
                 }
             },
+            SourceType::GitHub => {
+                // GitHub get_detail will be wired in Task 9
+                let msg = "Error: GitHub source not yet wired into server".to_string();
+                (msg.clone(), Some(msg))
+            }
         };
 
         self.emit_detail_metrics(

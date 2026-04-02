@@ -5,6 +5,7 @@ pub enum SourceType {
     Jira,
     Confluence,
     Slack,
+    GitHub,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -14,6 +15,9 @@ pub enum ParsedIdentifier {
     ConfluencePageId(String),
     ConfluenceTitle { title: String, space: Option<String> },
     SlackPermalink { channel: String, ts: String },
+    GitHubPR { owner: String, repo: String, number: u64 },
+    GitHubIssue { owner: String, repo: String, number: u64 },
+    GitHubShorthand { repo: String, number: u64 },
 }
 
 /// Detect the source type and parse the identifier.
@@ -59,7 +63,29 @@ pub fn detect_source(identifier: &str) -> Option<(SourceType, ParsedIdentifier)>
         return Some((SourceType::Slack, ParsedIdentifier::SlackPermalink { channel, ts }));
     }
 
-    // Priority 4: JIRA key pattern (2+ uppercase letters, dash, 1+ digits)
+    // Priority 4: GitHub PR URL
+    let github_pr_re = Regex::new(
+        r"^https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)"
+    ).ok()?;
+    if let Some(caps) = github_pr_re.captures(id) {
+        let owner = caps[1].to_string();
+        let repo = caps[2].to_string();
+        let number: u64 = caps[3].parse().ok()?;
+        return Some((SourceType::GitHub, ParsedIdentifier::GitHubPR { owner, repo, number }));
+    }
+
+    // Priority 5: GitHub Issue URL
+    let github_issue_re = Regex::new(
+        r"^https?://github\.com/([^/]+)/([^/]+)/issues/(\d+)"
+    ).ok()?;
+    if let Some(caps) = github_issue_re.captures(id) {
+        let owner = caps[1].to_string();
+        let repo = caps[2].to_string();
+        let number: u64 = caps[3].parse().ok()?;
+        return Some((SourceType::GitHub, ParsedIdentifier::GitHubIssue { owner, repo, number }));
+    }
+
+    // Priority 6: JIRA key pattern (2+ uppercase letters, dash, 1+ digits)
     let jira_key_re = Regex::new(r"^[A-Z][A-Z0-9]+-\d+$").ok()?;
     if jira_key_re.is_match(id) {
         return Some((SourceType::Jira, ParsedIdentifier::JiraKey(id.to_string())));
@@ -92,6 +118,21 @@ pub fn force_source(identifier: &str, source: &str) -> Option<(SourceType, Parse
         "slack" => {
             detect_source(id)
                 .filter(|(st, _)| matches!(st, SourceType::Slack))
+        }
+        "github" => {
+            detect_source(id)
+                .filter(|(st, _)| matches!(st, SourceType::GitHub))
+                .or_else(|| {
+                    // Try repo#number shorthand
+                    let shorthand_re = Regex::new(r"^([a-zA-Z0-9._-]+)#(\d+)$").ok()?;
+                    if let Some(caps) = shorthand_re.captures(id) {
+                        let repo = caps[1].to_string();
+                        let number: u64 = caps[2].parse().ok()?;
+                        Some((SourceType::GitHub, ParsedIdentifier::GitHubShorthand { repo, number }))
+                    } else {
+                        None
+                    }
+                })
         }
         _ => None,
     }

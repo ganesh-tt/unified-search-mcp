@@ -107,3 +107,86 @@ fn force_source_slack_without_url_returns_none() {
 fn force_source_unknown_returns_none() {
     assert!(force_source("FIN-1234", "unknown_source").is_none());
 }
+
+// ===========================================================================
+// GitHub detection tests
+// ===========================================================================
+
+#[test]
+fn detects_github_pr_url() {
+    let (st, parsed) = detect_source("https://github.com/tookitaki/product-amls/pull/123").unwrap();
+    assert!(matches!(st, SourceType::GitHub));
+    match parsed {
+        ParsedIdentifier::GitHubPR { owner, repo, number } => {
+            assert_eq!(owner, "tookitaki");
+            assert_eq!(repo, "product-amls");
+            assert_eq!(number, 123);
+        }
+        other => panic!("Expected GitHubPR, got {:?}", other),
+    }
+}
+
+#[test]
+fn detects_github_issue_url() {
+    let (st, parsed) = detect_source("https://github.com/tookitaki/product-amls/issues/456").unwrap();
+    assert!(matches!(st, SourceType::GitHub));
+    match parsed {
+        ParsedIdentifier::GitHubIssue { owner, repo, number } => {
+            assert_eq!(owner, "tookitaki");
+            assert_eq!(repo, "product-amls");
+            assert_eq!(number, 456);
+        }
+        other => panic!("Expected GitHubIssue, got {:?}", other),
+    }
+}
+
+#[test]
+fn github_shorthand_only_with_force() {
+    // Shorthand should NOT be detected by auto-detection
+    assert!(detect_source("product-amls#123").is_none());
+
+    // But should work with force_source("github")
+    let result = force_source("product-amls#123", "github");
+    assert!(result.is_some());
+    match result.unwrap() {
+        (SourceType::GitHub, ParsedIdentifier::GitHubShorthand { repo, number }) => {
+            assert_eq!(repo, "product-amls");
+            assert_eq!(number, 123);
+        }
+        other => panic!("Expected GitHubShorthand, got {:?}", other),
+    }
+}
+
+#[test]
+fn github_pr_url_with_extra_path() {
+    // PR URLs sometimes have /files or /commits suffix — should still match
+    let (st, parsed) = detect_source("https://github.com/tookitaki/product-amls/pull/99/files").unwrap();
+    assert!(matches!(st, SourceType::GitHub));
+    match parsed {
+        ParsedIdentifier::GitHubPR { number, .. } => assert_eq!(number, 99),
+        other => panic!("Expected GitHubPR, got {:?}", other),
+    }
+}
+
+#[test]
+fn force_source_github_with_full_url() {
+    // force_source("github") with a full URL should still parse it
+    let result = force_source("https://github.com/org/repo/pull/42", "github");
+    assert!(result.is_some());
+    let (st, parsed) = result.unwrap();
+    assert!(matches!(st, SourceType::GitHub));
+    match parsed {
+        ParsedIdentifier::GitHubPR { owner, repo, number } => {
+            assert_eq!(owner, "org");
+            assert_eq!(repo, "repo");
+            assert_eq!(number, 42);
+        }
+        other => panic!("Expected GitHubPR, got {:?}", other),
+    }
+}
+
+#[test]
+fn force_source_github_with_non_matching_text_returns_none() {
+    // Random text that doesn't match URL or shorthand should return None
+    assert!(force_source("some random text", "github").is_none());
+}
