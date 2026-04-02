@@ -2,6 +2,7 @@ pub mod models;
 pub mod config;
 pub mod core;
 pub mod mcp;
+pub mod resolve;
 pub mod server;
 pub mod sources;
 pub mod verify;
