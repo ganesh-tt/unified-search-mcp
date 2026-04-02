@@ -660,6 +660,53 @@ async fn get_detail_page_404_returns_error() {
 }
 
 // ===========================================================================
+// 21. get_detail_page_preserves_markdown_structure
+// ===========================================================================
+
+#[tokio::test]
+async fn get_detail_page_preserves_markdown_structure() {
+    let server = MockServer::start().await;
+
+    let body = r#"{
+        "id": "99999",
+        "type": "page",
+        "title": "Rich Content Page",
+        "space": {"key": "TEST", "name": "Test Space"},
+        "body": {
+            "storage": {
+                "value": "<h2>Overview</h2><p>This page has <strong>bold</strong> and <em>italic</em> text.</p><ul><li>Item one</li><li>Item two</li></ul><table><tr><th>Col A</th><th>Col B</th></tr><tr><td>1</td><td>2</td></tr></table>",
+                "representation": "storage"
+            }
+        },
+        "version": {"by": {"displayName": "Test User"}, "when": "2026-04-01T10:00:00.000Z", "number": 1},
+        "children": {"page": {"results": [], "size": 0}, "comment": {"results": [], "size": 0}},
+        "metadata": {"labels": {"results": []}},
+        "_links": {"webui": "/spaces/TEST/pages/99999", "base": "https://test.atlassian.net/wiki"}
+    }"#;
+
+    Mock::given(method("GET"))
+        .and(path("/wiki/rest/api/content/99999"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(body, "application/json"))
+        .mount(&server)
+        .await;
+
+    let config = default_config(&server.uri());
+    let source = ConfluenceSource::new(config);
+    let result = source.get_detail_page("99999").await.unwrap();
+
+    // Should have Markdown formatting
+    assert!(result.contains("## Overview"), "Should convert h2 to ##, got:\n{}", result);
+    assert!(result.contains("**bold**"), "Should convert strong to bold");
+    assert!(result.contains("*italic*"), "Should convert em to italic");
+    assert!(result.contains("- Item one"), "Should convert ul/li to list");
+    assert!(result.contains("| Col A | Col B |"), "Should convert table");
+
+    // Should NOT have raw HTML
+    assert!(!result.contains("<h2>"), "Should not have raw HTML tags");
+    assert!(!result.contains("<strong>"), "Should not have raw HTML tags");
+}
+
+// ===========================================================================
 // 18. search_comment_failure_degrades_gracefully
 // ===========================================================================
 

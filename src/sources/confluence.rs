@@ -612,7 +612,7 @@ impl ConfluenceSource {
             .and_then(|b| b.storage.as_ref())
             .and_then(|s| s.value.as_deref())
             .unwrap_or("");
-        md.push_str(&self.strip_html(body_html));
+        md.push_str(&super::confluence_markdown::to_markdown(body_html));
         md.push_str("\n\n");
 
         // Child pages
@@ -665,7 +665,7 @@ impl ConfluenceSource {
                             .and_then(|b| b.storage.as_ref())
                             .and_then(|s| s.value.as_deref())
                             .unwrap_or("");
-                        let comment_text = self.strip_html(comment_html);
+                        let comment_text = super::confluence_markdown::to_markdown(comment_html);
 
                         md.push_str(&format!(
                             "**{} — {}**\n{}\n\n",
