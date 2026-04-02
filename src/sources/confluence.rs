@@ -28,6 +28,40 @@ pub struct ConfluenceSource {
     html_tag_re: Regex,
 }
 
+// Comment API response types
+#[derive(Debug, Deserialize)]
+struct ConfluenceCommentResponse {
+    results: Vec<ConfluenceComment>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluenceComment {
+    body: Option<ConfluenceCommentBody>,
+    version: Option<ConfluenceCommentVersion>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluenceCommentBody {
+    storage: Option<ConfluenceCommentStorage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluenceCommentStorage {
+    value: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluenceCommentVersion {
+    by: Option<ConfluenceCommentAuthor>,
+    when: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluenceCommentAuthor {
+    #[serde(rename = "displayName")]
+    display_name: Option<String>,
+}
+
 impl ConfluenceSource {
     pub fn new(config: ConfluenceConfig) -> Self {
         let client = Client::builder()
@@ -142,7 +176,6 @@ struct ConfluenceSearchResult {
 
 #[derive(Debug, Deserialize)]
 struct ConfluenceContent {
-    #[allow(dead_code)]
     id: Option<String>,
     #[allow(dead_code)]
     #[serde(rename = "type")]
@@ -323,9 +356,16 @@ impl SearchSource for ConfluenceSource {
                 };
 
                 let mut metadata = HashMap::new();
-                if let Some(container) = r.result_global_container {
-                    if let Some(space_title) = container.title {
-                        metadata.insert("space".to_string(), space_title);
+                if let Some(ref container) = r.result_global_container {
+                    if let Some(ref space_title) = container.title {
+                        metadata.insert("space".to_string(), space_title.clone());
+                    }
+                }
+
+                // Store page_id for comment enrichment
+                if let Some(ref content) = r.content {
+                    if let Some(ref id) = content.id {
+                        metadata.insert("page_id".to_string(), id.clone());
                     }
                 }
 
@@ -341,6 +381,125 @@ impl SearchSource for ConfluenceSource {
             })
             .collect();
 
+        let results = self.enrich_with_comments(results).await;
         Ok(results)
+    }
+}
+
+impl ConfluenceSource {
+    /// Fetch comments in parallel for each result that has a page_id in metadata.
+    async fn enrich_with_comments(&self, mut results: Vec<SearchResult>) -> Vec<SearchResult> {
+        use futures::future::join_all;
+
+        let client = self.client.clone();
+        let base_url = self.config.base_url.clone();
+        let auth = self.auth_header();
+
+        // Build futures for each result
+        let futures: Vec<_> = results
+            .iter()
+            .map(|r| {
+                let page_id = r.metadata.get("page_id").cloned();
+                let client = client.clone();
+                let base_url = base_url.clone();
+                let auth = auth.clone();
+
+                async move {
+                    let id = match page_id {
+                        Some(id) => id,
+                        None => return None,
+                    };
+
+                    let url = format!(
+                        "{}/wiki/rest/api/content/{}/child/comment",
+                        base_url, id
+                    );
+
+                    let resp = client
+                        .get(&url)
+                        .header("Authorization", auth)
+                        .query(&[("expand", "body.storage,version"), ("limit", "25")])
+                        .send()
+                        .await;
+
+                    match resp {
+                        Ok(r) if r.status().is_success() => {
+                            let text = r.text().await.ok()?;
+                            let parsed: ConfluenceCommentResponse =
+                                serde_json::from_str(&text).ok()?;
+                            Some(parsed.results)
+                        }
+                        _ => None,
+                    }
+                }
+            })
+            .collect();
+
+        let comment_batches = join_all(futures).await;
+
+        for (result, comments_opt) in results.iter_mut().zip(comment_batches.into_iter()) {
+            match comments_opt {
+                Some(comments) => {
+                    let count = comments.len();
+                    result
+                        .metadata
+                        .insert("comment_count".to_string(), count.to_string());
+
+                    if count > 0 {
+                        let mut snippet_addition =
+                            format!("\n---\nComments ({} total):", count);
+
+                        // Latest 3 comments (reversed = most recent first)
+                        for comment in comments.iter().rev().take(3) {
+                            let author = comment
+                                .version
+                                .as_ref()
+                                .and_then(|v| v.by.as_ref())
+                                .and_then(|b| b.display_name.as_deref())
+                                .unwrap_or("Unknown");
+
+                            let date = comment
+                                .version
+                                .as_ref()
+                                .and_then(|v| v.when.as_deref())
+                                .and_then(|w| {
+                                    chrono::DateTime::parse_from_rfc3339(w).ok()
+                                })
+                                .map(|dt| dt.format("%Y-%m-%d").to_string())
+                                .unwrap_or_default();
+
+                            let body_html = comment
+                                .body
+                                .as_ref()
+                                .and_then(|b| b.storage.as_ref())
+                                .and_then(|s| s.value.as_deref())
+                                .unwrap_or("");
+
+                            let body_text = self.html_tag_re.replace_all(body_html, "").to_string();
+                            let body_text = body_text.trim();
+                            let body_truncated = if body_text.len() > 150 {
+                                format!("{}…", &body_text[..150])
+                            } else {
+                                body_text.to_string()
+                            };
+
+                            snippet_addition.push_str(&format!(
+                                "\n[{}, {}]: {}",
+                                author, date, body_truncated
+                            ));
+                        }
+
+                        result.snippet.push_str(&snippet_addition);
+                    }
+                }
+                None => {
+                    result
+                        .metadata
+                        .insert("comment_count".to_string(), "0".to_string());
+                }
+            }
+        }
+
+        results
     }
 }

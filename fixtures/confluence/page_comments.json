@@ -1,0 +1,45 @@
+{
+  "results": [
+    {
+      "id": "c1",
+      "type": "comment",
+      "title": "Re: Broadcast Threshold Design",
+      "body": {
+        "storage": {
+          "value": "<p>We should set the threshold at 500 messages per second based on the load test results.</p>",
+          "representation": "storage"
+        }
+      },
+      "version": {
+        "by": {
+          "type": "known",
+          "displayName": "Bob Smith"
+        },
+        "when": "2026-03-12T14:30:00.000Z",
+        "number": 1
+      }
+    },
+    {
+      "id": "c2",
+      "type": "comment",
+      "title": "Re: Broadcast Threshold Design",
+      "body": {
+        "storage": {
+          "value": "<p>Agreed. I've also added a <b>circuit breaker</b> to prevent cascade failures.</p>",
+          "representation": "storage"
+        }
+      },
+      "version": {
+        "by": {
+          "type": "known",
+          "displayName": "Alice Chen"
+        },
+        "when": "2026-03-13T10:00:00.000Z",
+        "number": 1
+      }
+    }
+  ],
+  "start": 0,
+  "limit": 25,
+  "size": 2
+}
