@@ -28,6 +28,107 @@ pub struct ConfluenceSource {
     html_tag_re: Regex,
 }
 
+// Page detail API response types
+#[derive(Debug, Deserialize)]
+struct ConfluencePageDetail {
+    #[allow(dead_code)]
+    id: Option<String>,
+    title: Option<String>,
+    space: Option<ConfluencePageSpace>,
+    body: Option<ConfluencePageBody>,
+    version: Option<ConfluencePageVersion>,
+    children: Option<ConfluencePageChildren>,
+    metadata: Option<ConfluencePageMetadata>,
+    #[serde(rename = "_links")]
+    links: Option<ConfluencePageLinks>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluencePageSpace {
+    key: Option<String>,
+    #[allow(dead_code)]
+    name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluencePageBody {
+    storage: Option<ConfluencePageStorage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluencePageStorage {
+    value: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluencePageVersion {
+    by: Option<ConfluencePageVersionBy>,
+    when: Option<String>,
+    #[allow(dead_code)]
+    number: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluencePageVersionBy {
+    #[serde(rename = "displayName")]
+    display_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluencePageChildren {
+    page: Option<ConfluenceChildPageCollection>,
+    comment: Option<ConfluenceChildCommentCollection>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluenceChildPageCollection {
+    results: Vec<ConfluenceChildPage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluenceChildPage {
+    title: Option<String>,
+    #[serde(rename = "_links")]
+    links: Option<ConfluenceChildPageLinks>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluenceChildPageLinks {
+    webui: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluenceChildCommentCollection {
+    results: Vec<ConfluenceChildComment>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluenceChildComment {
+    body: Option<ConfluencePageBody>,
+    version: Option<ConfluencePageVersion>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluencePageMetadata {
+    labels: Option<ConfluenceLabelCollection>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluenceLabelCollection {
+    results: Vec<ConfluenceLabel>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluenceLabel {
+    name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluencePageLinks {
+    webui: Option<String>,
+    base: Option<String>,
+}
+
 // Comment API response types
 #[derive(Debug, Deserialize)]
 struct ConfluenceCommentResponse {
@@ -383,6 +484,201 @@ impl SearchSource for ConfluenceSource {
 
         let results = self.enrich_with_comments(results).await;
         Ok(results)
+    }
+}
+
+impl ConfluenceSource {
+    /// Fetch full page details and return a formatted Markdown string.
+    pub async fn get_detail_page(&self, page_id: &str) -> Result<String, SearchError> {
+        let url = format!("{}/wiki/rest/api/content/{}", self.config.base_url, page_id);
+
+        let response = self
+            .client
+            .get(&url)
+            .header("Authorization", self.auth_header())
+            .query(&[(
+                "expand",
+                "body.storage,version,children.page,children.comment.body.storage,metadata.labels,space",
+            )])
+            .send()
+            .await
+            .map_err(|e| {
+                if e.is_timeout() {
+                    SearchError::Source {
+                        source_name: "confluence".to_string(),
+                        message: format!("Request timed out: {}", e),
+                    }
+                } else {
+                    SearchError::Http(e)
+                }
+            })?;
+
+        let status = response.status();
+
+        if status.as_u16() == 401 {
+            return Err(SearchError::Auth {
+                source_name: "confluence".to_string(),
+                message: "authentication failed — check email and api_token".to_string(),
+            });
+        }
+
+        if status.as_u16() == 404 {
+            return Err(SearchError::Source {
+                source_name: "confluence".to_string(),
+                message: format!("page not found (404): {}", page_id),
+            });
+        }
+
+        if !status.is_success() {
+            return Err(SearchError::Source {
+                source_name: "confluence".to_string(),
+                message: format!("unexpected status {}", status.as_u16()),
+            });
+        }
+
+        let body_text = response.text().await.map_err(|e| SearchError::Source {
+            source_name: "confluence".to_string(),
+            message: format!("Failed to read response body: {}", e),
+        })?;
+
+        let page: ConfluencePageDetail =
+            serde_json::from_str(&body_text).map_err(|e| SearchError::Source {
+                source_name: "confluence".to_string(),
+                message: format!("Failed to parse JSON: {}", e),
+            })?;
+
+        let mut md = String::new();
+
+        // Title
+        let title = page.title.as_deref().unwrap_or("Untitled");
+        md.push_str(&format!("# {}\n\n", title));
+
+        // Metadata table
+        let space_key = page
+            .space
+            .as_ref()
+            .and_then(|s| s.key.as_deref())
+            .unwrap_or("");
+        let author = page
+            .version
+            .as_ref()
+            .and_then(|v| v.by.as_ref())
+            .and_then(|b| b.display_name.as_deref())
+            .unwrap_or("");
+        let last_updated = page
+            .version
+            .as_ref()
+            .and_then(|v| v.when.as_deref())
+            .and_then(|w| chrono::DateTime::parse_from_rfc3339(w).ok())
+            .map(|dt| dt.format("%Y-%m-%d").to_string())
+            .unwrap_or_default();
+        let labels: Vec<&str> = page
+            .metadata
+            .as_ref()
+            .and_then(|m| m.labels.as_ref())
+            .map(|lc| lc.results.iter().filter_map(|l| l.name.as_deref()).collect())
+            .unwrap_or_default();
+        let labels_str = labels.join(", ");
+
+        // Build page URL
+        let page_url = {
+            let base = page
+                .links
+                .as_ref()
+                .and_then(|l| l.base.as_deref())
+                .unwrap_or(&self.config.base_url);
+            let webui = page
+                .links
+                .as_ref()
+                .and_then(|l| l.webui.as_deref())
+                .unwrap_or("");
+            format!("{}{}", base, webui)
+        };
+
+        md.push_str("| Field | Value |\n");
+        md.push_str("|-------|-------|\n");
+        md.push_str(&format!("| Space | {} |\n", space_key));
+        md.push_str(&format!("| Author | {} |\n", author));
+        md.push_str(&format!("| Last Updated | {} |\n", last_updated));
+        md.push_str(&format!("| Labels | {} |\n", labels_str));
+        md.push_str(&format!("| URL | {} |\n", page_url));
+        md.push('\n');
+
+        // Body content
+        md.push_str("## Content\n\n");
+        let body_html = page
+            .body
+            .as_ref()
+            .and_then(|b| b.storage.as_ref())
+            .and_then(|s| s.value.as_deref())
+            .unwrap_or("");
+        md.push_str(&self.strip_html(body_html));
+        md.push_str("\n\n");
+
+        // Child pages
+        if let Some(children) = &page.children {
+            if let Some(child_pages) = &children.page {
+                if !child_pages.results.is_empty() {
+                    md.push_str("## Child Pages\n\n");
+                    for child in &child_pages.results {
+                        let child_title = child.title.as_deref().unwrap_or("Untitled");
+                        let child_link = child
+                            .links
+                            .as_ref()
+                            .and_then(|l| l.webui.as_deref())
+                            .unwrap_or("");
+                        if child_link.is_empty() {
+                            md.push_str(&format!("- {}\n", child_title));
+                        } else {
+                            md.push_str(&format!(
+                                "- [{}]({}{})\n",
+                                child_title, self.config.base_url, child_link
+                            ));
+                        }
+                    }
+                    md.push('\n');
+                }
+            }
+
+            // Comments
+            if let Some(comment_collection) = &children.comment {
+                let comments = &comment_collection.results;
+                if !comments.is_empty() {
+                    md.push_str(&format!("## Comments ({})\n\n", comments.len()));
+                    for comment in comments {
+                        let comment_author = comment
+                            .version
+                            .as_ref()
+                            .and_then(|v| v.by.as_ref())
+                            .and_then(|b| b.display_name.as_deref())
+                            .unwrap_or("Unknown");
+                        let comment_date = comment
+                            .version
+                            .as_ref()
+                            .and_then(|v| v.when.as_deref())
+                            .and_then(|w| chrono::DateTime::parse_from_rfc3339(w).ok())
+                            .map(|dt| dt.format("%Y-%m-%d").to_string())
+                            .unwrap_or_default();
+                        let comment_html = comment
+                            .body
+                            .as_ref()
+                            .and_then(|b| b.storage.as_ref())
+                            .and_then(|s| s.value.as_deref())
+                            .unwrap_or("");
+                        let comment_text = self.strip_html(comment_html);
+
+                        md.push_str(&format!(
+                            "**{} — {}**\n{}\n\n",
+                            comment_author,
+                            comment_date,
+                            comment_text.trim()
+                        ));
+                    }
+                }
+            }
+        }
+
+        Ok(md)
     }
 }
 

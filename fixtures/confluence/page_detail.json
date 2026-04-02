@@ -1,0 +1,59 @@
+{
+  "id": "123456",
+  "type": "page",
+  "title": "Broadcast Threshold Design",
+  "space": {
+    "key": "PROD",
+    "name": "Production"
+  },
+  "body": {
+    "storage": {
+      "value": "<h2>Overview</h2><p>The broadcast threshold controls how many messages per second are sent to downstream consumers. We settled on <b>500 msg/s</b> based on load testing.</p><h2>Decision</h2><p>Use a bounded channel with backpressure.</p>",
+      "representation": "storage"
+    }
+  },
+  "version": {
+    "by": {
+      "type": "known",
+      "displayName": "Alice Chen"
+    },
+    "when": "2026-04-01T10:00:00.000Z",
+    "number": 5
+  },
+  "children": {
+    "page": {
+      "results": [
+        {"id": "111", "type": "page", "title": "Load Test Results", "_links": {"webui": "/spaces/PROD/pages/111/Load+Test+Results"}},
+        {"id": "222", "type": "page", "title": "Configuration Guide", "_links": {"webui": "/spaces/PROD/pages/222/Configuration+Guide"}}
+      ],
+      "size": 2
+    },
+    "comment": {
+      "results": [
+        {
+          "id": "c1",
+          "body": {"storage": {"value": "<p>Looks good to me. Approved.</p>"}},
+          "version": {"by": {"displayName": "Bob Smith"}, "when": "2026-03-15T14:00:00.000Z"}
+        },
+        {
+          "id": "c2",
+          "body": {"storage": {"value": "<p>Should we document the <b>fallback behavior</b> when the channel is full?</p>"}},
+          "version": {"by": {"displayName": "Charlie Lee"}, "when": "2026-03-20T09:30:00.000Z"}
+        }
+      ],
+      "size": 2
+    }
+  },
+  "metadata": {
+    "labels": {
+      "results": [
+        {"name": "architecture"},
+        {"name": "decisions"}
+      ]
+    }
+  },
+  "_links": {
+    "webui": "/spaces/PROD/pages/123456/Broadcast+Threshold+Design",
+    "base": "https://tookitaki.atlassian.net/wiki"
+  }
+}

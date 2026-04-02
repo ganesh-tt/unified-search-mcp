@@ -606,6 +606,60 @@ async fn search_enriches_with_comments() {
 }
 
 // ===========================================================================
+// 19. get_detail_page_returns_full_markdown
+// ===========================================================================
+
+#[tokio::test]
+async fn get_detail_page_returns_full_markdown() {
+    let server = MockServer::start().await;
+    let body = include_str!("../fixtures/confluence/page_detail.json");
+
+    Mock::given(method("GET"))
+        .and(path("/wiki/rest/api/content/123456"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(body, "application/json"))
+        .mount(&server)
+        .await;
+
+    let config = default_config(&server.uri());
+    let source = ConfluenceSource::new(config);
+    let result = source.get_detail_page("123456").await.unwrap();
+
+    assert!(result.contains("Broadcast Threshold Design"), "Missing title");
+    assert!(result.contains("PROD"), "Missing space");
+    assert!(result.contains("500 msg/s"), "Missing body content");
+    assert!(result.contains("Load Test Results"), "Missing child page");
+    assert!(result.contains("Configuration Guide"), "Missing child page");
+    assert!(result.contains("Bob Smith"), "Missing comment author");
+    assert!(result.contains("Looks good to me"), "Missing comment text");
+    assert!(result.contains("Charlie Lee"), "Missing second comment author");
+    assert!(result.contains("architecture"), "Missing label");
+    assert!(!result.contains("<h2>"), "HTML tags should be stripped");
+    assert!(!result.contains("<p>"), "HTML tags should be stripped");
+    assert!(!result.contains("<b>"), "HTML tags should be stripped");
+}
+
+// ===========================================================================
+// 20. get_detail_page_404_returns_error
+// ===========================================================================
+
+#[tokio::test]
+async fn get_detail_page_404_returns_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/wiki/rest/api/content/999999"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+
+    let config = default_config(&server.uri());
+    let source = ConfluenceSource::new(config);
+    let result = source.get_detail_page("999999").await;
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("not found") || err_msg.contains("404"));
+}
+
+// ===========================================================================
 // 18. search_comment_failure_degrades_gracefully
 // ===========================================================================
 
