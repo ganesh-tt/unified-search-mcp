@@ -784,3 +784,21 @@ async fn all_sources_disabled() {
         data_rows
     );
 }
+
+// ===========================================================================
+// Test 9: integration_get_detail_jira_detection
+// ===========================================================================
+
+/// Verify that detect_source correctly identifies a JIRA key and parses it
+/// into a JiraKey variant — exercising the resolve → delegation path.
+#[tokio::test]
+async fn integration_get_detail_jira_detection() {
+    use unified_search_mcp::resolve::detect_source;
+
+    let (source_type, parsed) = detect_source("FIN-1234").unwrap();
+    assert!(matches!(source_type, unified_search_mcp::resolve::SourceType::Jira));
+    match parsed {
+        unified_search_mcp::resolve::ParsedIdentifier::JiraKey(k) => assert_eq!(k, "FIN-1234"),
+        other => panic!("Expected JiraKey, got {:?}", other),
+    }
+}
