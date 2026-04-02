@@ -24,11 +24,6 @@ async fn main() {
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(7);
 
-    if stats {
-        unified_search_mcp::stats::run_stats("~/.unified-search/metrics.jsonl", stats_days);
-        return;
-    }
-
     let config_path = args
         .iter()
         .position(|a| a == "--config")
@@ -44,6 +39,11 @@ async fn main() {
                 eprintln!("[FAIL] Could not load config from '{}': {}", config_path, e);
                 std::process::exit(1);
             }
+            if stats {
+                // Fall back to default metrics path when config fails to load
+                unified_search_mcp::stats::run_stats("~/.unified-search/metrics.jsonl", stats_days);
+                return;
+            }
             eprintln!("Warning: Could not load config from '{}': {}", config_path, e);
             eprintln!("Starting with no sources configured. Create a config.yaml to enable sources.");
             eprintln!("See config.example.yaml for a template.");
@@ -56,6 +56,13 @@ async fn main() {
             return;
         }
     };
+
+    // Run stats if --stats was passed (after config is loaded so we use configured metrics_path)
+    if stats {
+        let metrics_path = shellexpand::tilde(&app_config.server.metrics_path).to_string();
+        unified_search_mcp::stats::run_stats(&metrics_path, stats_days);
+        return;
+    }
 
     // Run preflight verification if --verify was passed
     if verify {
@@ -123,7 +130,7 @@ async fn main() {
         max_results: app_config.server.max_results,
     };
 
-    let metrics_path = shellexpand::tilde("~/.unified-search/metrics.jsonl").to_string();
+    let metrics_path = shellexpand::tilde(&app_config.server.metrics_path).to_string();
     let metrics = unified_search_mcp::metrics::MetricsLogger::new(std::path::PathBuf::from(metrics_path));
 
     let orchestrator = SearchOrchestrator::new(sources, orchestrator_config);

@@ -25,6 +25,7 @@ pub struct ServerConfig {
     pub max_results: usize,
     pub timeout_seconds: u64,
     pub log_level: String,
+    pub metrics_path: String,
 }
 
 impl Default for ServerConfig {
@@ -34,6 +35,7 @@ impl Default for ServerConfig {
             max_results: 20,
             timeout_seconds: 10,
             log_level: "info".to_string(),
+            metrics_path: "~/.unified-search/metrics.jsonl".to_string(),
         }
     }
 }
@@ -92,6 +94,7 @@ struct RawServerConfig {
     max_results: Option<usize>,
     timeout_seconds: Option<u64>,
     log_level: Option<String>,
+    metrics_path: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -216,6 +219,7 @@ pub fn load(path: &str) -> Result<AppConfig, SearchError> {
             max_results: s.max_results.unwrap_or(20),
             timeout_seconds: s.timeout_seconds.unwrap_or(10),
             log_level: s.log_level.unwrap_or_else(|| "info".to_string()),
+            metrics_path: s.metrics_path.unwrap_or_else(|| "~/.unified-search/metrics.jsonl".to_string()),
         },
         None => ServerConfig::default(),
     };
