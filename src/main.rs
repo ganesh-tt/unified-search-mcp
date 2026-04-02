@@ -15,6 +15,20 @@ use unified_search_mcp::sources::SearchSource;
 async fn main() {
     let args: Vec<String> = env::args().collect();
     let verify = args.iter().any(|a| a == "--verify");
+
+    let stats = args.iter().any(|a| a == "--stats");
+    let stats_days = args
+        .iter()
+        .position(|a| a == "--days")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(7);
+
+    if stats {
+        unified_search_mcp::stats::run_stats("~/.unified-search/metrics.jsonl", stats_days);
+        return;
+    }
+
     let config_path = args
         .iter()
         .position(|a| a == "--config")
