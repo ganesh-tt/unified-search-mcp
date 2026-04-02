@@ -98,7 +98,7 @@ fn default_config() -> OrchestratorConfig {
 
 fn build_server(sources: Vec<Box<dyn SearchSource>>) -> UnifiedSearchServer {
     let orchestrator = SearchOrchestrator::new(sources, default_config());
-    UnifiedSearchServer::new(orchestrator, None, None, None)
+    UnifiedSearchServer::new(orchestrator, None, None, None, None)
 }
 
 // ===========================================================================

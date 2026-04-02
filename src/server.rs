@@ -3,6 +3,7 @@ use std::fmt::Write;
 use serde_json;
 
 use crate::core::SearchOrchestrator;
+use crate::metrics::{MetricsEntry, MetricsLogger};
 use crate::models::{SearchFilters, SearchQuery, SearchResult};
 use crate::resolve::{detect_source, force_source, ParsedIdentifier, SourceType};
 use crate::sources::confluence::ConfluenceSource;
@@ -24,6 +25,7 @@ pub struct UnifiedSearchServer {
     jira_source: Option<JiraSource>,
     confluence_source: Option<ConfluenceSource>,
     slack_source: Option<SlackSource>,
+    metrics: Option<MetricsLogger>,
 }
 
 impl UnifiedSearchServer {
@@ -34,12 +36,14 @@ impl UnifiedSearchServer {
         jira_source: Option<JiraSource>,
         confluence_source: Option<ConfluenceSource>,
         slack_source: Option<SlackSource>,
+        metrics: Option<MetricsLogger>,
     ) -> Self {
         Self {
             orchestrator,
             jira_source,
             confluence_source,
             slack_source,
+            metrics,
         }
     }
 
@@ -130,6 +134,30 @@ impl UnifiedSearchServer {
             response.total_sources_queried, response.query_time_ms,
         );
 
+        // Emit metrics
+        if let Some(ref metrics) = self.metrics {
+            let sources_queried: Vec<String> = response
+                .per_source_stats
+                .iter()
+                .map(|s| s.source.clone())
+                .collect();
+            let sources_list = if sources_queried.is_empty() {
+                vec!["unknown".to_string()]
+            } else {
+                sources_queried
+            };
+            metrics
+                .log(MetricsEntry::Search {
+                    tool: "unified_search".to_string(),
+                    query: search_query.text.clone(),
+                    sources_queried: sources_list,
+                    total_results: response.results.len(),
+                    deduped_results: response.results.len(),
+                    total_ms: response.query_time_ms,
+                })
+                .await;
+        }
+
         md
     }
 
@@ -149,13 +177,38 @@ impl UnifiedSearchServer {
             text: query,
             max_results: max,
             filters: SearchFilters {
-                sources: Some(vec![source]),
+                sources: Some(vec![source.clone()]),
                 after: None,
                 before: None,
             },
         };
 
         let response = self.orchestrator.search(&search_query).await;
+
+        // Emit metrics
+        if let Some(ref metrics) = self.metrics {
+            let sources_queried: Vec<String> = response
+                .per_source_stats
+                .iter()
+                .map(|s| s.source.clone())
+                .collect();
+            let sources_list = if sources_queried.is_empty() {
+                vec![source]
+            } else {
+                sources_queried
+            };
+            metrics
+                .log(MetricsEntry::Search {
+                    tool: "search_source".to_string(),
+                    query: search_query.text.clone(),
+                    sources_queried: sources_list,
+                    total_results: response.results.len(),
+                    deduped_results: response.results.len(),
+                    total_ms: response.query_time_ms,
+                })
+                .await;
+        }
+
         serde_json::to_string_pretty(&response.results)
             .unwrap_or_else(|e| format!("{{\"error\": \"serialization failed: {e}\"}}"))
     }
@@ -224,6 +277,8 @@ impl UnifiedSearchServer {
         source: Option<String>,
         _max_comments: Option<usize>,
     ) -> String {
+        let start = std::time::Instant::now();
+
         let detection = if let Some(ref src) = source {
             force_source(&identifier, src)
         } else {
@@ -233,66 +288,147 @@ impl UnifiedSearchServer {
         let (source_type, parsed) = match detection {
             Some(pair) => pair,
             None => {
-                return format!(
+                let result = format!(
                     "Error: Could not detect source type for '{}'. \
                      Provide a `source` parameter ('jira', 'confluence', 'slack').",
                     identifier
                 );
+                self.emit_detail_metrics(
+                    &identifier,
+                    "unknown",
+                    source.as_deref(),
+                    start,
+                    0,
+                    Some(&result),
+                )
+                .await;
+                return result;
             }
         };
 
-        match source_type {
+        let detected_source_name = match source_type {
+            SourceType::Jira => "jira",
+            SourceType::Confluence => "confluence",
+            SourceType::Slack => "slack",
+        };
+
+        // Execute the detail fetch; capture (result, error, comment_count)
+        let (result_text, error_text): (String, Option<String>) = match source_type {
             SourceType::Jira => {
                 let key = match parsed {
-                    ParsedIdentifier::JiraKey(k) => k,
-                    ParsedIdentifier::JiraUrl { key, .. } => key,
-                    _ => return "Error: unexpected parsed identifier for JIRA".to_string(),
+                    ParsedIdentifier::JiraKey(k) => Some(k),
+                    ParsedIdentifier::JiraUrl { key, .. } => Some(key),
+                    _ => None,
                 };
-                match &self.jira_source {
-                    Some(src) => match src.get_detail_issue(&key).await {
-                        Ok(md) => md,
-                        Err(e) => format!("Error: {}", e),
+                match key {
+                    None => {
+                        let msg = "Error: unexpected parsed identifier for JIRA".to_string();
+                        (msg.clone(), Some(msg))
+                    }
+                    Some(k) => match &self.jira_source {
+                        Some(src) => match src.get_detail_issue(&k).await {
+                            Ok(md) => (md, None),
+                            Err(e) => {
+                                let msg = format!("Error: {}", e);
+                                (msg.clone(), Some(msg))
+                            }
+                        },
+                        None => {
+                            let msg = "Error: JIRA source not configured".to_string();
+                            (msg.clone(), Some(msg))
+                        }
                     },
-                    None => "Error: JIRA source not configured".to_string(),
                 }
             }
-            SourceType::Confluence => {
-                let page_id = match parsed {
-                    ParsedIdentifier::ConfluencePageId(id) => id,
-                    ParsedIdentifier::ConfluenceTitle { title, space } => {
-                        return format!(
-                            "Error: Confluence title lookup not yet implemented. \
-                             Use a page URL or ID instead. (title='{}', space={:?})",
-                            title, space
-                        );
+            SourceType::Confluence => match parsed {
+                ParsedIdentifier::ConfluencePageId(page_id) => {
+                    match &self.confluence_source {
+                        Some(src) => match src.get_detail_page(&page_id).await {
+                            Ok(md) => (md, None),
+                            Err(e) => {
+                                let msg = format!("Error: {}", e);
+                                (msg.clone(), Some(msg))
+                            }
+                        },
+                        None => {
+                            let msg = "Error: Confluence source not configured".to_string();
+                            (msg.clone(), Some(msg))
+                        }
                     }
-                    _ => {
-                        return "Error: unexpected parsed identifier for Confluence".to_string()
-                    }
-                };
-                match &self.confluence_source {
-                    Some(src) => match src.get_detail_page(&page_id).await {
-                        Ok(md) => md,
-                        Err(e) => format!("Error: {}", e),
-                    },
-                    None => "Error: Confluence source not configured".to_string(),
                 }
-            }
-            SourceType::Slack => {
-                let (channel, ts) = match parsed {
-                    ParsedIdentifier::SlackPermalink { channel, ts } => (channel, ts),
-                    _ => {
-                        return "Error: unexpected parsed identifier for Slack".to_string()
-                    }
-                };
-                match &self.slack_source {
-                    Some(src) => match src.get_detail_thread(&channel, &ts).await {
-                        Ok(md) => md,
-                        Err(e) => format!("Error: {}", e),
-                    },
-                    None => "Error: Slack source not configured".to_string(),
+                ParsedIdentifier::ConfluenceTitle { title, space } => {
+                    let msg = format!(
+                        "Error: Confluence title lookup not yet implemented. \
+                         Use a page URL or ID instead. (title='{}', space={:?})",
+                        title, space
+                    );
+                    (msg.clone(), Some(msg))
                 }
-            }
+                _ => {
+                    let msg =
+                        "Error: unexpected parsed identifier for Confluence".to_string();
+                    (msg.clone(), Some(msg))
+                }
+            },
+            SourceType::Slack => match parsed {
+                ParsedIdentifier::SlackPermalink { channel, ts } => {
+                    match &self.slack_source {
+                        Some(src) => match src.get_detail_thread(&channel, &ts).await {
+                            Ok(md) => (md, None),
+                            Err(e) => {
+                                let msg = format!("Error: {}", e);
+                                (msg.clone(), Some(msg))
+                            }
+                        },
+                        None => {
+                            let msg = "Error: Slack source not configured".to_string();
+                            (msg.clone(), Some(msg))
+                        }
+                    }
+                }
+                _ => {
+                    let msg =
+                        "Error: unexpected parsed identifier for Slack".to_string();
+                    (msg.clone(), Some(msg))
+                }
+            },
+        };
+
+        self.emit_detail_metrics(
+            &identifier,
+            detected_source_name,
+            source.as_deref(),
+            start,
+            0,
+            error_text.as_deref(),
+        )
+        .await;
+
+        result_text
+    }
+
+    /// Helper to emit Detail metrics for get_detail calls.
+    async fn emit_detail_metrics(
+        &self,
+        identifier: &str,
+        detected_source: &str,
+        explicit_source: Option<&str>,
+        start: std::time::Instant,
+        comments_returned: usize,
+        error: Option<&str>,
+    ) {
+        if let Some(ref metrics) = self.metrics {
+            metrics
+                .log(MetricsEntry::Detail {
+                    tool: "get_detail".to_string(),
+                    identifier: identifier.to_string(),
+                    detected_source: detected_source.to_string(),
+                    explicit_source: explicit_source.map(|s| s.to_string()),
+                    latency_ms: start.elapsed().as_millis() as u64,
+                    comments_returned,
+                    error: error.map(|s| s.to_string()),
+                })
+                .await;
         }
     }
 }

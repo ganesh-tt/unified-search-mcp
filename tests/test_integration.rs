@@ -173,7 +173,7 @@ fn build_server_from(
     config: OrchestratorConfig,
 ) -> UnifiedSearchServer {
     let orchestrator = SearchOrchestrator::new(sources, config);
-    UnifiedSearchServer::new(orchestrator, None, None, None)
+    UnifiedSearchServer::new(orchestrator, None, None, None, None)
 }
 
 // ===========================================================================
