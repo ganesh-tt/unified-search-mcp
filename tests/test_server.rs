@@ -98,7 +98,7 @@ fn default_config() -> OrchestratorConfig {
 
 fn build_server(sources: Vec<Box<dyn SearchSource>>) -> UnifiedSearchServer {
     let orchestrator = SearchOrchestrator::new(sources, default_config());
-    UnifiedSearchServer::new(orchestrator)
+    UnifiedSearchServer::new(orchestrator, None, None, None)
 }
 
 // ===========================================================================
@@ -324,5 +324,45 @@ async fn index_local_returns_not_enabled() {
             || lower.contains("not enabled")
             || lower.contains("not available"),
         "Expected 'not enabled' message, got:\n{output}"
+    );
+}
+
+// ===========================================================================
+// Test 7: get_detail_returns_error_for_unknown_identifier
+// ===========================================================================
+
+/// handle_get_detail with an unrecognized identifier (no JIRA key pattern,
+/// no URL) should return an error message.
+#[tokio::test]
+async fn get_detail_returns_error_for_unknown_identifier() {
+    let server = build_server(vec![]);
+    let output = server
+        .handle_get_detail("random text".to_string(), None, None)
+        .await;
+    let lower = output.to_lowercase();
+    assert!(
+        lower.contains("could not detect")
+            || lower.contains("not recognized")
+            || lower.contains("error"),
+        "Expected error for unrecognized identifier, got:\n{output}"
+    );
+}
+
+// ===========================================================================
+// Test 8: get_detail_jira_key_without_source_returns_not_configured
+// ===========================================================================
+
+/// handle_get_detail with a valid JIRA key but no JIRA source configured
+/// should return a "not configured" error.
+#[tokio::test]
+async fn get_detail_jira_key_without_source_returns_not_configured() {
+    let server = build_server(vec![]);
+    let output = server
+        .handle_get_detail("FIN-1234".to_string(), None, None)
+        .await;
+    let lower = output.to_lowercase();
+    assert!(
+        lower.contains("not configured"),
+        "Expected 'not configured' error for JIRA key without source, got:\n{output}"
     );
 }

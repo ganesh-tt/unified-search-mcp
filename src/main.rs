@@ -36,7 +36,7 @@ async fn main() {
 
             // Build a server with no sources and serve via MCP
             let orchestrator = SearchOrchestrator::new(vec![], OrchestratorConfig::default());
-            let server = UnifiedSearchServer::new(orchestrator);
+            let server = UnifiedSearchServer::new(orchestrator, None, None, None);
             eprintln!("unified-search-mcp v0.1.0 -- 0 source(s) ready (no config loaded)");
             mcp::serve_stdio(server).await;
             return;
@@ -83,6 +83,26 @@ async fn main() {
 
     let source_count = sources.len();
 
+    // Build per-source instances for get_detail lookups
+    let jira_detail = app_config
+        .sources
+        .jira
+        .as_ref()
+        .filter(|c| c.enabled)
+        .map(|c| JiraSource::new(c.config.clone()));
+    let confluence_detail = app_config
+        .sources
+        .confluence
+        .as_ref()
+        .filter(|c| c.enabled)
+        .map(|c| ConfluenceSource::new(c.config.clone()));
+    let slack_detail = app_config
+        .sources
+        .slack
+        .as_ref()
+        .filter(|c| c.enabled)
+        .map(|c| SlackSource::new(c.config.clone()));
+
     let orchestrator_config = OrchestratorConfig {
         timeout_seconds: app_config.server.timeout_seconds,
         source_weights,
@@ -90,7 +110,7 @@ async fn main() {
     };
 
     let orchestrator = SearchOrchestrator::new(sources, orchestrator_config);
-    let server = UnifiedSearchServer::new(orchestrator);
+    let server = UnifiedSearchServer::new(orchestrator, jira_detail, confluence_detail, slack_detail);
 
     // Stdout is now the MCP JSON-RPC channel -- all diagnostics go to stderr
     eprintln!(

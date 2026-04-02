@@ -4,6 +4,10 @@ use serde_json;
 
 use crate::core::SearchOrchestrator;
 use crate::models::{SearchFilters, SearchQuery, SearchResult};
+use crate::resolve::{detect_source, force_source, ParsedIdentifier, SourceType};
+use crate::sources::confluence::ConfluenceSource;
+use crate::sources::jira::JiraSource;
+use crate::sources::slack::SlackSource;
 
 /// MCP server wrapping a [`SearchOrchestrator`].
 ///
@@ -17,12 +21,26 @@ use crate::models::{SearchFilters, SearchQuery, SearchResult};
 /// | `index_local`       | `handle_index_local`      |
 pub struct UnifiedSearchServer {
     orchestrator: SearchOrchestrator,
+    jira_source: Option<JiraSource>,
+    confluence_source: Option<ConfluenceSource>,
+    slack_source: Option<SlackSource>,
 }
 
 impl UnifiedSearchServer {
-    /// Create a new server backed by the given orchestrator.
-    pub fn new(orchestrator: SearchOrchestrator) -> Self {
-        Self { orchestrator }
+    /// Create a new server backed by the given orchestrator, with optional
+    /// per-source instances for `get_detail` lookups.
+    pub fn new(
+        orchestrator: SearchOrchestrator,
+        jira_source: Option<JiraSource>,
+        confluence_source: Option<ConfluenceSource>,
+        slack_source: Option<SlackSource>,
+    ) -> Self {
+        Self {
+            orchestrator,
+            jira_source,
+            confluence_source,
+            slack_source,
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -189,6 +207,93 @@ impl UnifiedSearchServer {
     pub async fn handle_index_local(&self) -> String {
         "Vector search not enabled. Local file indexing will be available in a future release."
             .to_string()
+    }
+
+    // -----------------------------------------------------------------------
+    // Tool: get_detail
+    // -----------------------------------------------------------------------
+
+    /// Fetch full details for a JIRA ticket, Confluence page, or Slack thread.
+    ///
+    /// `identifier` can be a JIRA key, a JIRA/Confluence/Slack URL, or a
+    /// Confluence page title. The source is auto-detected unless `source` is
+    /// explicitly provided.
+    pub async fn handle_get_detail(
+        &self,
+        identifier: String,
+        source: Option<String>,
+        _max_comments: Option<usize>,
+    ) -> String {
+        let detection = if let Some(ref src) = source {
+            force_source(&identifier, src)
+        } else {
+            detect_source(&identifier)
+        };
+
+        let (source_type, parsed) = match detection {
+            Some(pair) => pair,
+            None => {
+                return format!(
+                    "Error: Could not detect source type for '{}'. \
+                     Provide a `source` parameter ('jira', 'confluence', 'slack').",
+                    identifier
+                );
+            }
+        };
+
+        match source_type {
+            SourceType::Jira => {
+                let key = match parsed {
+                    ParsedIdentifier::JiraKey(k) => k,
+                    ParsedIdentifier::JiraUrl { key, .. } => key,
+                    _ => return "Error: unexpected parsed identifier for JIRA".to_string(),
+                };
+                match &self.jira_source {
+                    Some(src) => match src.get_detail_issue(&key).await {
+                        Ok(md) => md,
+                        Err(e) => format!("Error: {}", e),
+                    },
+                    None => "Error: JIRA source not configured".to_string(),
+                }
+            }
+            SourceType::Confluence => {
+                let page_id = match parsed {
+                    ParsedIdentifier::ConfluencePageId(id) => id,
+                    ParsedIdentifier::ConfluenceTitle { title, space } => {
+                        return format!(
+                            "Error: Confluence title lookup not yet implemented. \
+                             Use a page URL or ID instead. (title='{}', space={:?})",
+                            title, space
+                        );
+                    }
+                    _ => {
+                        return "Error: unexpected parsed identifier for Confluence".to_string()
+                    }
+                };
+                match &self.confluence_source {
+                    Some(src) => match src.get_detail_page(&page_id).await {
+                        Ok(md) => md,
+                        Err(e) => format!("Error: {}", e),
+                    },
+                    None => "Error: Confluence source not configured".to_string(),
+                }
+            }
+            SourceType::Slack => {
+                let (channel, ts) = match parsed {
+                    ParsedIdentifier::SlackPermalink { channel, ts } => (channel, ts),
+                    _ => {
+                        return "Error: unexpected parsed identifier for Slack".to_string()
+                    }
+                };
+                match &self.slack_source {
+                    Some(src) => match src.get_detail_thread(&channel, &ts).await {
+                        Ok(md) => md,
+                        Err(e) => format!("Error: {}", e),
+                    },
+                    None => "Error: Slack source not configured".to_string(),
+                }
+            }
+        }
     }
 }
 

@@ -47,6 +47,19 @@ pub struct SearchSourceParams {
     pub max_results: Option<usize>,
 }
 
+/// Parameters for the `get_detail` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetDetailParams {
+    /// The identifier: JIRA key (FIN-1234), URL, or Confluence page title
+    pub identifier: String,
+    /// Optional: force source type ('jira', 'confluence', 'slack'). If omitted, auto-detected.
+    #[serde(default)]
+    pub source: Option<String>,
+    /// Optional: max comments to return (default: all)
+    #[serde(default)]
+    pub max_comments: Option<usize>,
+}
+
 // ---------------------------------------------------------------------------
 // MCP server wrapper
 // ---------------------------------------------------------------------------
@@ -105,6 +118,17 @@ impl McpServer {
     #[tool(description = "Index local files for vector search (not yet available).")]
     async fn index_local(&self) -> String {
         self.server.handle_index_local().await
+    }
+
+    /// Fetch full details for a specific item found via search.
+    #[tool(description = "Fetch full details for a specific JIRA ticket, Confluence page, or Slack thread. Accepts a JIRA key (FIN-1234), a JIRA/Confluence/Slack URL, or a Confluence page title. Returns full content: description, all comments, linked issues, subtasks, child pages, or thread replies depending on source. Use this when you need complete context about a specific item found via unified_search.")]
+    async fn get_detail(
+        &self,
+        Parameters(params): Parameters<GetDetailParams>,
+    ) -> String {
+        self.server
+            .handle_get_detail(params.identifier, params.source, params.max_comments)
+            .await
     }
 }
 
