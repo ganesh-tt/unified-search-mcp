@@ -106,6 +106,305 @@ impl JiraSource {
     fn project_from_key(key: &str) -> String {
         key.split('-').next().unwrap_or(key).to_string()
     }
+
+    /// Fetch full details for a single JIRA issue and return Markdown.
+    pub async fn get_detail_issue(&self, key: &str) -> Result<String, SearchError> {
+        let url = format!("{}/rest/api/3/issue/{}", self.config.base_url, key);
+        let fields = "summary,description,status,assignee,reporter,labels,fixVersions,issuelinks,subtasks,comment,priority,issuetype,created,updated";
+
+        let response = self
+            .client
+            .get(&url)
+            .basic_auth(&self.config.email, Some(&self.config.api_token))
+            .query(&[("fields", fields)])
+            .send()
+            .await
+            .map_err(|e| SearchError::Source {
+                source_name: "jira".to_string(),
+                message: format!("Request failed: {}", e),
+            })?;
+
+        let status = response.status();
+
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(SearchError::Auth {
+                source_name: "jira".to_string(),
+                message: "Authentication failed — check email and API token".to_string(),
+            });
+        }
+
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(SearchError::Source {
+                source_name: "jira".to_string(),
+                message: format!("Issue {} not found (404)", key),
+            });
+        }
+
+        if !status.is_success() {
+            return Err(SearchError::Source {
+                source_name: "jira".to_string(),
+                message: format!("Unexpected HTTP status: {}", status),
+            });
+        }
+
+        let body: serde_json::Value =
+            response.json().await.map_err(|e| SearchError::Source {
+                source_name: "jira".to_string(),
+                message: format!("Failed to parse response JSON: {}", e),
+            })?;
+
+        let issue_key = body
+            .get("key")
+            .and_then(|v| v.as_str())
+            .unwrap_or(key);
+
+        let fields_obj = body.get("fields").cloned().unwrap_or(serde_json::Value::Null);
+
+        let summary = fields_obj
+            .get("summary")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        let status_name = fields_obj
+            .get("status")
+            .and_then(|s| s.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("Unknown");
+
+        let issue_type = fields_obj
+            .get("issuetype")
+            .and_then(|t| t.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("Unknown");
+
+        let priority = fields_obj
+            .get("priority")
+            .and_then(|p| p.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("Unknown");
+
+        let assignee = fields_obj
+            .get("assignee")
+            .and_then(|a| a.get("displayName"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("Unassigned");
+
+        let reporter = fields_obj
+            .get("reporter")
+            .and_then(|r| r.get("displayName"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("Unknown");
+
+        let labels: Vec<&str> = fields_obj
+            .get("labels")
+            .and_then(|l| l.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+            .unwrap_or_default();
+
+        let fix_versions: Vec<&str> = fields_obj
+            .get("fixVersions")
+            .and_then(|fv| fv.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.get("name").and_then(|n| n.as_str()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let created = fields_obj
+            .get("created")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        let updated = fields_obj
+            .get("updated")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        // Build Markdown output
+        let mut md = String::new();
+
+        // Title
+        md.push_str(&format!("# {}: {}\n\n", issue_key, summary));
+
+        // Metadata table
+        md.push_str("| Field | Value |\n");
+        md.push_str("|-------|-------|\n");
+        md.push_str(&format!("| Status | {} |\n", status_name));
+        md.push_str(&format!("| Type | {} |\n", issue_type));
+        md.push_str(&format!("| Priority | {} |\n", priority));
+        md.push_str(&format!("| Assignee | {} |\n", assignee));
+        md.push_str(&format!("| Reporter | {} |\n", reporter));
+        md.push_str(&format!("| Labels | {} |\n", labels.join(", ")));
+        md.push_str(&format!("| Fix Versions | {} |\n", fix_versions.join(", ")));
+        md.push_str(&format!("| Created | {} |\n", created));
+        md.push_str(&format!("| Updated | {} |\n", updated));
+        md.push('\n');
+
+        // Description
+        md.push_str("## Description\n\n");
+        if let Some(desc) = fields_obj.get("description") {
+            if !desc.is_null() {
+                let desc_text = Self::extract_adf_text(desc);
+                if !desc_text.is_empty() {
+                    md.push_str(&desc_text);
+                } else {
+                    md.push_str("_No description._");
+                }
+            } else {
+                md.push_str("_No description._");
+            }
+        } else {
+            md.push_str("_No description._");
+        }
+        md.push_str("\n\n");
+
+        // Linked Issues
+        let issue_links = fields_obj
+            .get("issuelinks")
+            .and_then(|l| l.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        if !issue_links.is_empty() {
+            md.push_str("## Linked Issues\n\n");
+            for link in &issue_links {
+                let link_type = link
+                    .get("type")
+                    .and_then(|t| t.get("name"))
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("related");
+
+                if let Some(outward_issue) = link.get("outwardIssue") {
+                    let outward_label = link
+                        .get("type")
+                        .and_then(|t| t.get("outward"))
+                        .and_then(|n| n.as_str())
+                        .unwrap_or(link_type);
+                    let linked_key = outward_issue
+                        .get("key")
+                        .and_then(|k| k.as_str())
+                        .unwrap_or("?");
+                    let linked_summary = outward_issue
+                        .get("fields")
+                        .and_then(|f| f.get("summary"))
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("");
+                    let linked_status = outward_issue
+                        .get("fields")
+                        .and_then(|f| f.get("status"))
+                        .and_then(|s| s.get("name"))
+                        .and_then(|n| n.as_str())
+                        .unwrap_or("Unknown");
+                    md.push_str(&format!(
+                        "- **{}** {}: {} [{}]\n",
+                        outward_label, linked_key, linked_summary, linked_status
+                    ));
+                }
+
+                if let Some(inward_issue) = link.get("inwardIssue") {
+                    let inward_label = link
+                        .get("type")
+                        .and_then(|t| t.get("inward"))
+                        .and_then(|n| n.as_str())
+                        .unwrap_or(link_type);
+                    let linked_key = inward_issue
+                        .get("key")
+                        .and_then(|k| k.as_str())
+                        .unwrap_or("?");
+                    let linked_summary = inward_issue
+                        .get("fields")
+                        .and_then(|f| f.get("summary"))
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("");
+                    let linked_status = inward_issue
+                        .get("fields")
+                        .and_then(|f| f.get("status"))
+                        .and_then(|s| s.get("name"))
+                        .and_then(|n| n.as_str())
+                        .unwrap_or("Unknown");
+                    md.push_str(&format!(
+                        "- **{}** {}: {} [{}]\n",
+                        inward_label, linked_key, linked_summary, linked_status
+                    ));
+                }
+            }
+            md.push('\n');
+        }
+
+        // Subtasks
+        let subtasks = fields_obj
+            .get("subtasks")
+            .and_then(|s| s.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        if !subtasks.is_empty() {
+            md.push_str("## Subtasks\n\n");
+            for subtask in &subtasks {
+                let st_key = subtask
+                    .get("key")
+                    .and_then(|k| k.as_str())
+                    .unwrap_or("?");
+                let st_summary = subtask
+                    .get("fields")
+                    .and_then(|f| f.get("summary"))
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("");
+                let st_status = subtask
+                    .get("fields")
+                    .and_then(|f| f.get("status"))
+                    .and_then(|s| s.get("name"))
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("Unknown");
+                let checkbox = if st_status == "Done" { "[x]" } else { "[ ]" };
+                md.push_str(&format!("- {} {} — {}\n", checkbox, st_key, st_summary));
+            }
+            md.push('\n');
+        }
+
+        // Comments
+        let comments = fields_obj
+            .get("comment")
+            .and_then(|c| c.get("comments"))
+            .and_then(|c| c.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        let comment_total = fields_obj
+            .get("comment")
+            .and_then(|c| c.get("total"))
+            .and_then(|t| t.as_u64())
+            .unwrap_or(comments.len() as u64);
+
+        if !comments.is_empty() {
+            md.push_str(&format!("## Comments ({})\n\n", comment_total));
+            for comment in &comments {
+                let author = comment
+                    .get("author")
+                    .and_then(|a| a.get("displayName"))
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("Unknown");
+                let created_date = comment
+                    .get("created")
+                    .and_then(|c| c.as_str())
+                    .and_then(|s| {
+                        chrono::DateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.3f%z")
+                            .ok()
+                            .map(|dt| dt.format("%Y-%m-%d").to_string())
+                    })
+                    .unwrap_or_default();
+                let body_text = comment
+                    .get("body")
+                    .map(|b| Self::extract_adf_text(b))
+                    .unwrap_or_default();
+
+                md.push_str(&format!("### {} — {}\n\n{}\n\n", author, created_date, body_text));
+            }
+        }
+
+        Ok(md)
+    }
 }
 
 #[async_trait]

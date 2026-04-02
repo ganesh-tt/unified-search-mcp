@@ -649,6 +649,60 @@ async fn search_handles_empty_comments() {
 }
 
 // ===========================================================================
+// Test 20: get_detail_issue_returns_full_markdown
+// ===========================================================================
+
+#[tokio::test]
+async fn get_detail_issue_returns_full_markdown() {
+    let server = MockServer::start().await;
+    let body = include_str!("../fixtures/jira/issue_detail.json");
+
+    Mock::given(method("GET"))
+        .and(path("/rest/api/3/issue/FIN-1234"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(body, "application/json"))
+        .mount(&server)
+        .await;
+
+    let config = make_config(&server.uri());
+    let source = JiraSource::new(config);
+    let result = source.get_detail_issue("FIN-1234").await.unwrap();
+
+    assert!(result.contains("FIN-1234: Fix broadcast threshold OOM"), "Missing title");
+    assert!(result.contains("broadcast queue grows unbounded"), "Missing description");
+    assert!(result.contains("In Progress"), "Missing status");
+    assert!(result.contains("Alice Chen"), "Missing assignee");
+    assert!(result.contains("v6.3.4"), "Missing fix version");
+    assert!(result.contains("High"), "Missing priority");
+    assert!(result.contains("FIN-1235"), "Missing linked issue");
+    assert!(result.contains("blocks"), "Missing link type");
+    assert!(result.contains("FIN-1234-1"), "Missing subtask 1");
+    assert!(result.contains("FIN-1234-2"), "Missing subtask 2");
+    assert!(result.contains("Bob Smith"), "Missing comment author");
+    assert!(result.contains("Reproduced on staging"), "Missing comment body");
+}
+
+// ===========================================================================
+// Test 21: get_detail_issue_404_returns_error
+// ===========================================================================
+
+#[tokio::test]
+async fn get_detail_issue_404_returns_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/rest/api/3/issue/NOPE-999"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+
+    let config = make_config(&server.uri());
+    let source = JiraSource::new(config);
+    let result = source.get_detail_issue("NOPE-999").await;
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("not found") || err_msg.contains("404"));
+}
+
+// ===========================================================================
 // Test 17: time_filter_after_before
 // ===========================================================================
 

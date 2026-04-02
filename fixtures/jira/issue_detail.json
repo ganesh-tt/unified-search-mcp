@@ -1,0 +1,54 @@
+{
+  "key": "FIN-1234",
+  "fields": {
+    "summary": "Fix broadcast threshold OOM",
+    "description": {
+      "type": "doc",
+      "content": [{"type": "paragraph", "content": [{"type": "text", "text": "The broadcast queue grows unbounded when consumer is slower than producer. Need to add backpressure."}]}]
+    },
+    "issuetype": {"name": "Story"},
+    "priority": {"name": "High"},
+    "status": {"name": "In Progress"},
+    "assignee": {"displayName": "Alice Chen"},
+    "reporter": {"displayName": "Bob Smith"},
+    "labels": ["backend", "performance"],
+    "fixVersions": [{"name": "v6.3.4"}],
+    "created": "2026-03-10T08:00:00.000+0000",
+    "updated": "2026-04-01T14:30:00.000+0000",
+    "issuelinks": [
+      {
+        "type": {"name": "Blocks", "inward": "is blocked by", "outward": "blocks"},
+        "outwardIssue": {
+          "key": "FIN-1235",
+          "fields": {"summary": "Deploy broadcast fix", "status": {"name": "Open"}}
+        }
+      },
+      {
+        "type": {"name": "Blocks", "inward": "is blocked by", "outward": "blocks"},
+        "inwardIssue": {
+          "key": "FIN-1200",
+          "fields": {"summary": "Kafka consumer optimization", "status": {"name": "Done"}}
+        }
+      }
+    ],
+    "subtasks": [
+      {"key": "FIN-1234-1", "fields": {"summary": "Add bounded channel", "status": {"name": "Done"}}},
+      {"key": "FIN-1234-2", "fields": {"summary": "Add metrics for queue depth", "status": {"name": "In Progress"}}}
+    ],
+    "comment": {
+      "comments": [
+        {
+          "author": {"displayName": "Bob Smith"},
+          "body": {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Reproduced on staging."}]}]},
+          "created": "2026-03-11T09:00:00.000+0000"
+        },
+        {
+          "author": {"displayName": "Alice Chen"},
+          "body": {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Fix deployed with bounded channel of 1000 elements."}]}]},
+          "created": "2026-03-15T08:00:00.000+0000"
+        }
+      ],
+      "total": 2
+    }
+  }
+}
