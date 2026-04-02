@@ -1,7 +1,8 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use crate::cache::ResponseCache;
 use crate::models::{SearchQuery, SearchResult, SourceHealth, UnifiedSearchResponse};
 use crate::sources::SearchSource;
 
@@ -27,15 +28,21 @@ impl Default for OrchestratorConfig {
 pub struct SearchOrchestrator {
     sources: Vec<Arc<dyn SearchSource>>,
     config: OrchestratorConfig,
+    cache: Option<Mutex<ResponseCache>>,
 }
 
 impl SearchOrchestrator {
-    pub fn new(sources: Vec<Box<dyn SearchSource>>, config: OrchestratorConfig) -> Self {
+    pub fn new(sources: Vec<Box<dyn SearchSource>>, config: OrchestratorConfig, cache_ttl_seconds: u64) -> Self {
+        let cache = if cache_ttl_seconds > 0 {
+            Some(Mutex::new(ResponseCache::new(100, Duration::from_secs(cache_ttl_seconds))))
+        } else {
+            None
+        };
         let sources = sources.into_iter().map(|s| Arc::from(s)).collect();
-        Self { sources, config }
+        Self { sources, config, cache }
     }
 
-    pub async fn search(&self, query: &SearchQuery) -> UnifiedSearchResponse {
+    pub async fn search(&self, query: &SearchQuery, no_cache: bool) -> UnifiedSearchResponse {
         let start = Instant::now();
 
         // Step 1: Determine which sources to query based on filters
@@ -52,6 +59,19 @@ impl SearchOrchestrator {
         };
 
         let total_sources_queried = active_sources.len();
+
+        // Cache lookup
+        if !no_cache {
+            if let Some(ref cache_mutex) = self.cache {
+                let source_names: Vec<String> = active_sources.iter().map(|s| s.name().to_string()).collect();
+                let source_refs: Vec<&str> = source_names.iter().map(|s| s.as_str()).collect();
+                if let Ok(mut cache) = cache_mutex.lock() {
+                    if let Some(cached) = cache.get(&query.text, &source_refs) {
+                        return cached;
+                    }
+                }
+            }
+        }
 
         // Step 2: Fan-out searches with timeout via tokio::spawn
         let timeout_duration = Duration::from_secs(self.config.timeout_seconds);
@@ -195,14 +215,25 @@ impl SearchOrchestrator {
 
         let query_time_ms = start.elapsed().as_millis() as u64;
 
-        UnifiedSearchResponse {
+        let response = UnifiedSearchResponse {
             results: deduped,
             warnings,
             total_sources_queried,
             query_time_ms,
             per_source_stats,
             cache_hit: false,
+        };
+
+        // Store in cache
+        if let Some(ref cache_mutex) = self.cache {
+            let source_names: Vec<String> = active_sources.iter().map(|s| s.name().to_string()).collect();
+            let source_refs: Vec<&str> = source_names.iter().map(|s| s.as_str()).collect();
+            if let Ok(mut cache) = cache_mutex.lock() {
+                cache.put(&query.text, &source_refs, response.clone());
+            }
         }
+
+        response
     }
 
     pub async fn health_check_all(&self) -> Vec<SourceHealth> {

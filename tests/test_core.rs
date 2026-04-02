@@ -223,9 +223,10 @@ async fn single_source_happy_path() {
     let orchestrator = SearchOrchestrator::new(
         vec![boxed(source)],
         default_config(),
+        0,
     );
 
-    let response = orchestrator.search(&query("hello")).await;
+    let response = orchestrator.search(&query("hello"), false).await;
 
     assert_eq!(response.results.len(), 3, "Expected 3 results");
     assert!(
@@ -267,9 +268,10 @@ async fn multiple_sources_merged() {
     let orchestrator = SearchOrchestrator::new(
         vec![boxed(source_a), boxed(source_b), boxed(source_c)],
         default_config(),
+        0,
     );
 
-    let response = orchestrator.search(&query("search term")).await;
+    let response = orchestrator.search(&query("search term"), false).await;
 
     assert_eq!(response.results.len(), 6, "Expected 6 merged results");
     assert!(
@@ -316,10 +318,11 @@ async fn source_timeout_returns_partial() {
     let orchestrator = SearchOrchestrator::new(
         vec![boxed(fast_source), boxed(slow_source)],
         config,
+        0,
     );
 
     let start = Instant::now();
-    let response = orchestrator.search(&query("test")).await;
+    let response = orchestrator.search(&query("test"), false).await;
     let elapsed = start.elapsed();
 
     // Fast source results should be present
@@ -378,9 +381,10 @@ async fn source_error_returns_partial() {
     let orchestrator = SearchOrchestrator::new(
         vec![boxed(ok_source), boxed(err_source)],
         default_config(),
+        0,
     );
 
-    let response = orchestrator.search(&query("test")).await;
+    let response = orchestrator.search(&query("test"), false).await;
 
     // Should have results from the working source
     assert_eq!(response.results.len(), 2, "Expected 2 results from ok source");
@@ -419,9 +423,10 @@ async fn all_sources_fail() {
     let orchestrator = SearchOrchestrator::new(
         vec![boxed(err_source_a), boxed(err_source_b)],
         default_config(),
+        0,
     );
 
-    let response = orchestrator.search(&query("test")).await;
+    let response = orchestrator.search(&query("test"), false).await;
 
     assert_eq!(response.results.len(), 0, "Expected 0 results when all sources fail");
     assert_eq!(
@@ -463,9 +468,10 @@ async fn source_weights_affect_ranking() {
     let orchestrator = SearchOrchestrator::new(
         vec![boxed(source_a), boxed(source_b)],
         config,
+        0,
     );
 
-    let response = orchestrator.search(&query("test")).await;
+    let response = orchestrator.search(&query("test"), false).await;
 
     assert_eq!(response.results.len(), 2, "Expected 2 results");
 
@@ -504,9 +510,10 @@ async fn dedup_by_url() {
     let orchestrator = SearchOrchestrator::new(
         vec![boxed(source_a), boxed(source_b)],
         default_config(),
+        0,
     );
 
-    let response = orchestrator.search(&query("test")).await;
+    let response = orchestrator.search(&query("test"), false).await;
 
     // Same URL -> dedup -> keep only the higher-scored one (0.9)
     assert_eq!(
@@ -561,9 +568,10 @@ async fn dedup_by_snippet_prefix() {
     let orchestrator = SearchOrchestrator::new(
         vec![boxed(source_a), boxed(source_b)],
         default_config(),
+        0,
     );
 
-    let response = orchestrator.search(&query("test")).await;
+    let response = orchestrator.search(&query("test"), false).await;
 
     // Same normalized snippet prefix -> dedup -> keep higher-scored (0.9)
     assert_eq!(
@@ -606,6 +614,7 @@ async fn max_results_truncation() {
     let orchestrator = SearchOrchestrator::new(
         vec![boxed(source_a), boxed(source_b)],
         config,
+        0,
     );
 
     let q = SearchQuery {
@@ -614,7 +623,7 @@ async fn max_results_truncation() {
         filters: SearchFilters::default(),
     };
 
-    let response = orchestrator.search(&q).await;
+    let response = orchestrator.search(&q, false).await;
 
     assert_eq!(
         response.results.len(),
@@ -648,6 +657,7 @@ async fn source_filter_in_query() {
     let orchestrator = SearchOrchestrator::new(
         vec![boxed(slack_source), boxed(confluence_source), boxed(jira_source)],
         default_config(),
+        0,
     );
 
     // Filter: only query "slack"
@@ -661,7 +671,7 @@ async fn source_filter_in_query() {
         },
     };
 
-    let response = orchestrator.search(&q).await;
+    let response = orchestrator.search(&q, false).await;
 
     // Only slack results should appear
     assert_eq!(
@@ -693,6 +703,7 @@ async fn health_check_all() {
     let orchestrator = SearchOrchestrator::new(
         vec![boxed(healthy_source), boxed(unhealthy_source)],
         default_config(),
+        0,
     );
 
     let health_results: Vec<SourceHealth> = orchestrator.health_check_all().await;
@@ -728,9 +739,9 @@ async fn health_check_all() {
 /// No sources -> 0 results, 0 warnings, total_sources_queried=0.
 #[tokio::test]
 async fn empty_sources_list() {
-    let orchestrator = SearchOrchestrator::new(vec![], default_config());
+    let orchestrator = SearchOrchestrator::new(vec![], default_config(), 0);
 
-    let response = orchestrator.search(&query("anything")).await;
+    let response = orchestrator.search(&query("anything"), false).await;
 
     assert_eq!(response.results.len(), 0, "Expected 0 results with no sources");
     assert!(
@@ -765,9 +776,10 @@ async fn per_source_stats_populated() {
     let orchestrator = SearchOrchestrator::new(
         vec![boxed(source_a), boxed(source_b)],
         default_config(),
+        0,
     );
 
-    let response = orchestrator.search(&query("test")).await;
+    let response = orchestrator.search(&query("test"), false).await;
 
     assert_eq!(
         response.per_source_stats.len(), 2,
@@ -801,9 +813,10 @@ async fn panic_source_doesnt_crash() {
     let orchestrator = SearchOrchestrator::new(
         vec![boxed(ok_source), boxed(PanicSource)],
         default_config(),
+        0,
     );
 
-    let response = orchestrator.search(&query("test")).await;
+    let response = orchestrator.search(&query("test"), false).await;
 
     // The reliable source's results should still be returned
     assert_eq!(
@@ -837,4 +850,39 @@ async fn panic_source_doesnt_crash() {
         "Expected a warning mentioning the panic or crash, got: {:?}",
         response.warnings
     );
+}
+
+// ===========================================================================
+// Test 14: cache_returns_cached_results
+// ===========================================================================
+
+/// First search populates cache (cache_hit=false), second identical search
+/// returns cached results (cache_hit=true).
+#[tokio::test]
+async fn cache_returns_cached_results() {
+    let source = MockSource::new("slack", vec![make_result("slack", "msg1", 0.9)]);
+    let orchestrator = SearchOrchestrator::new(vec![boxed(source)], default_config(), 300);
+
+    let response1 = orchestrator.search(&query("test"), false).await;
+    assert_eq!(response1.results.len(), 1);
+    assert!(!response1.cache_hit);
+
+    let response2 = orchestrator.search(&query("test"), false).await;
+    assert_eq!(response2.results.len(), 1);
+    assert!(response2.cache_hit);
+}
+
+// ===========================================================================
+// Test 15: cache_bypass_with_no_cache
+// ===========================================================================
+
+/// When no_cache=true, the cache is bypassed even if a cached response exists.
+#[tokio::test]
+async fn cache_bypass_with_no_cache() {
+    let source = MockSource::new("slack", vec![make_result("slack", "msg1", 0.9)]);
+    let orchestrator = SearchOrchestrator::new(vec![boxed(source)], default_config(), 300);
+
+    let _ = orchestrator.search(&query("test"), false).await;
+    let response = orchestrator.search(&query("test"), true).await;
+    assert!(!response.cache_hit);
 }

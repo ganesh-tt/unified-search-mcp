@@ -62,6 +62,7 @@ impl UnifiedSearchServer {
         query: String,
         sources: Option<Vec<String>>,
         max_results: Option<usize>,
+        no_cache: bool,
     ) -> String {
         let max = max_results.unwrap_or(20);
         let search_query = SearchQuery {
@@ -74,7 +75,7 @@ impl UnifiedSearchServer {
             },
         };
 
-        let response = self.orchestrator.search(&search_query).await;
+        let response = self.orchestrator.search(&search_query, no_cache).await;
 
         // Determine if we need to truncate and save
         let display_results: &[SearchResult];
@@ -134,6 +135,10 @@ impl UnifiedSearchServer {
             response.total_sources_queried, response.query_time_ms,
         );
 
+        if response.cache_hit {
+            let _ = write!(md, " | **Cache**: HIT");
+        }
+
         // Emit metrics
         if let Some(ref metrics) = self.metrics {
             let sources_queried: Vec<String> = response
@@ -171,6 +176,7 @@ impl UnifiedSearchServer {
         source: String,
         query: String,
         max_results: Option<usize>,
+        no_cache: bool,
     ) -> String {
         let max = max_results.unwrap_or(20);
         let search_query = SearchQuery {
@@ -183,7 +189,7 @@ impl UnifiedSearchServer {
             },
         };
 
-        let response = self.orchestrator.search(&search_query).await;
+        let response = self.orchestrator.search(&search_query, no_cache).await;
 
         // Emit metrics
         if let Some(ref metrics) = self.metrics {

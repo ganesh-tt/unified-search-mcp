@@ -172,7 +172,7 @@ fn build_server_from(
     sources: Vec<Box<dyn SearchSource>>,
     config: OrchestratorConfig,
 ) -> UnifiedSearchServer {
-    let orchestrator = SearchOrchestrator::new(sources, config);
+    let orchestrator = SearchOrchestrator::new(sources, config, 0);
     UnifiedSearchServer::new(orchestrator, None, None, None, None)
 }
 
@@ -229,7 +229,7 @@ async fn full_pipeline_all_sources_mocked() {
 
     let server = build_server_from(sources, default_orchestrator_config());
     let output = server
-        .handle_unified_search("broadcast threshold".to_string(), None, None)
+        .handle_unified_search("broadcast threshold".to_string(), None, None, false)
         .await;
 
     // Verify all 4 sources appear in the results
@@ -321,7 +321,7 @@ async fn mixed_success_failure() {
 
     let server = build_server_from(sources, default_orchestrator_config());
     let output = server
-        .handle_unified_search("broadcast threshold".to_string(), None, None)
+        .handle_unified_search("broadcast threshold".to_string(), None, None, false)
         .await;
 
     // Should have results from the 3 working sources
@@ -391,6 +391,7 @@ async fn search_source_single() {
             "confluence".to_string(),
             "broadcast threshold".to_string(),
             None,
+            false,
         )
         .await;
 
@@ -527,7 +528,7 @@ async fn unified_search_returns_markdown_table() {
 
     let server = build_server_from(sources, default_orchestrator_config());
     let output = server
-        .handle_unified_search("broadcast threshold".to_string(), None, None)
+        .handle_unified_search("broadcast threshold".to_string(), None, None, false)
         .await;
 
     // Verify Markdown table structure
@@ -616,6 +617,7 @@ async fn source_filter_respected() {
             "broadcast threshold".to_string(),
             Some(vec!["slack".to_string(), "jira".to_string()]),
             None,
+            false,
         )
         .await;
 
@@ -714,7 +716,7 @@ async fn max_results_global() {
 
     let server = build_server_from(sources, config);
     let output = server
-        .handle_unified_search("threshold".to_string(), None, Some(5))
+        .handle_unified_search("threshold".to_string(), None, Some(5), false)
         .await;
 
     // Count data rows in the table (rows starting with "| <digit>")
@@ -754,7 +756,7 @@ async fn all_sources_disabled() {
 
     let server = build_server_from(sources, default_orchestrator_config());
     let output = server
-        .handle_unified_search("broadcast threshold".to_string(), None, None)
+        .handle_unified_search("broadcast threshold".to_string(), None, None, false)
         .await;
 
     // With no sources, the table should have only header + separator, no data rows

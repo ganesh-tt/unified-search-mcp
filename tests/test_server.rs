@@ -97,7 +97,7 @@ fn default_config() -> OrchestratorConfig {
 }
 
 fn build_server(sources: Vec<Box<dyn SearchSource>>) -> UnifiedSearchServer {
-    let orchestrator = SearchOrchestrator::new(sources, default_config());
+    let orchestrator = SearchOrchestrator::new(sources, default_config(), 0);
     UnifiedSearchServer::new(orchestrator, None, None, None, None)
 }
 
@@ -116,10 +116,10 @@ async fn tools_list_returns_all_four() {
 
     // All four handlers should be callable and return non-empty output
     let r1 = server
-        .handle_unified_search("test".to_string(), None, None)
+        .handle_unified_search("test".to_string(), None, None, false)
         .await;
     let r2 = server
-        .handle_search_source("slack".to_string(), "test".to_string(), None)
+        .handle_search_source("slack".to_string(), "test".to_string(), None, false)
         .await;
     let r3 = server.handle_list_sources().await;
     let r4 = server.handle_index_local().await;
@@ -153,7 +153,7 @@ async fn unified_search_tool_dispatch() {
     ]);
 
     let output = server
-        .handle_unified_search("test query".to_string(), None, None)
+        .handle_unified_search("test query".to_string(), None, None, false)
         .await;
 
     // Should contain Markdown table header
@@ -214,7 +214,7 @@ async fn search_source_tool_dispatch() {
     ]);
 
     let output = server
-        .handle_search_source("slack".to_string(), "test".to_string(), None)
+        .handle_search_source("slack".to_string(), "test".to_string(), None, false)
         .await;
 
     // Should be valid JSON
@@ -292,7 +292,7 @@ async fn unknown_source_returns_empty() {
     ]);
 
     let output = server
-        .handle_search_source("nonexistent".to_string(), "test".to_string(), None)
+        .handle_search_source("nonexistent".to_string(), "test".to_string(), None, false)
         .await;
 
     // Should be valid JSON with an empty array (no source matches)

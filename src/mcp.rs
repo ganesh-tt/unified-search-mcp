@@ -33,6 +33,9 @@ pub struct UnifiedSearchParams {
     /// Optional: maximum results to return (default 20)
     #[serde(default)]
     pub max_results: Option<usize>,
+    /// Optional: bypass cache and force a fresh search (default false)
+    #[serde(default)]
+    pub no_cache: Option<bool>,
 }
 
 /// Parameters for the `search_source` tool.
@@ -45,6 +48,9 @@ pub struct SearchSourceParams {
     /// Optional: maximum results to return (default 20)
     #[serde(default)]
     pub max_results: Option<usize>,
+    /// Optional: bypass cache and force a fresh search (default false)
+    #[serde(default)]
+    pub no_cache: Option<bool>,
 }
 
 /// Parameters for the `get_detail` tool.
@@ -92,7 +98,7 @@ impl McpServer {
         Parameters(params): Parameters<UnifiedSearchParams>,
     ) -> String {
         self.server
-            .handle_unified_search(params.query, params.sources, params.max_results)
+            .handle_unified_search(params.query, params.sources, params.max_results, params.no_cache.unwrap_or(false))
             .await
     }
 
@@ -104,7 +110,7 @@ impl McpServer {
         Parameters(params): Parameters<SearchSourceParams>,
     ) -> String {
         self.server
-            .handle_search_source(params.source, params.query, params.max_results)
+            .handle_search_source(params.source, params.query, params.max_results, params.no_cache.unwrap_or(false))
             .await
     }
 

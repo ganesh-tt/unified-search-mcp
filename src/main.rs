@@ -49,7 +49,7 @@ async fn main() {
             eprintln!("See config.example.yaml for a template.");
 
             // Build a server with no sources and serve via MCP
-            let orchestrator = SearchOrchestrator::new(vec![], OrchestratorConfig::default());
+            let orchestrator = SearchOrchestrator::new(vec![], OrchestratorConfig::default(), 0);
             let server = UnifiedSearchServer::new(orchestrator, None, None, None, None);
             eprintln!("unified-search-mcp v0.1.0 -- 0 source(s) ready (no config loaded)");
             mcp::serve_stdio(server).await;
@@ -133,7 +133,7 @@ async fn main() {
     let metrics_path = shellexpand::tilde(&app_config.server.metrics_path).to_string();
     let metrics = unified_search_mcp::metrics::MetricsLogger::new(std::path::PathBuf::from(metrics_path));
 
-    let orchestrator = SearchOrchestrator::new(sources, orchestrator_config);
+    let orchestrator = SearchOrchestrator::new(sources, orchestrator_config, app_config.server.cache_ttl_seconds);
     let server = UnifiedSearchServer::new(orchestrator, jira_detail, confluence_detail, slack_detail, Some(metrics));
 
     // Stdout is now the MCP JSON-RPC channel -- all diagnostics go to stderr
