@@ -302,7 +302,7 @@ impl LocalTextSource {
 
         for base_path in paths {
             for entry in WalkDir::new(base_path)
-                .follow_links(true)
+                .follow_links(false)  // security: prevent symlink traversal
                 .into_iter()
                 .filter_map(|e| e.ok())
             {

@@ -2,6 +2,9 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc, Duration};
 
 pub fn run_stats(metrics_path: &str, days: u64) {
+    println!("Note: --stats scans ~/.claude/projects/ conversation logs to detect bypass tool calls.");
+    println!("No conversation content is read — only tool call names are counted.\n");
+
     let cutoff = Utc::now() - Duration::days(days as i64);
     let path = PathBuf::from(shellexpand::tilde(metrics_path).to_string());
 

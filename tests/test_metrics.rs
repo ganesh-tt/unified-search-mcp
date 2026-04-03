@@ -57,6 +57,32 @@ async fn logs_multiple_entries() {
     assert_eq!(lines.len(), 5);
 }
 
+#[tokio::test]
+async fn truncates_long_query_in_log() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("metrics.jsonl");
+    let logger = MetricsLogger::new(path.clone());
+
+    let long_query = "a".repeat(200);
+    let entry = MetricsEntry::Search {
+        tool: "unified_search".to_string(),
+        query: long_query,
+        sources_queried: vec!["slack".to_string()],
+        total_results: 1,
+        deduped_results: 1,
+        total_ms: 100,
+    };
+
+    logger.log(entry).await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    let content = std::fs::read_to_string(&path).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(content.lines().next().unwrap()).unwrap();
+    let logged_query = parsed["query"].as_str().unwrap();
+    assert!(logged_query.len() <= 104, "Query should be truncated, got {} chars", logged_query.len()); // 100 + "..."
+    assert!(logged_query.ends_with("..."), "Truncated query should end with ...");
+}
+
 #[test]
 fn detail_entry_serializes() {
     let entry = MetricsEntry::Detail {

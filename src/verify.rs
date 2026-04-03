@@ -232,7 +232,7 @@ fn format_latency(ms: Option<u64>) -> String {
 /// If no include patterns are specified, counts all files.
 fn count_matching_files(dir: &Path, include_patterns: &[String]) -> usize {
     let walker = walkdir::WalkDir::new(dir)
-        .follow_links(true)
+        .follow_links(false)  // security: prevent symlink traversal
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file());
