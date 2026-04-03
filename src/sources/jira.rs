@@ -42,7 +42,10 @@ impl JiraSource {
 
     /// Build JQL query string from search text, project filters, and time filters.
     fn build_jql(&self, query: &SearchQuery) -> String {
-        let escaped = query.text.replace('"', "\\\"");
+        // Escape backslashes FIRST, then quotes, to prevent JQL injection.
+        // If we escape quotes first, a literal `\"` in input becomes `\\"` which
+        // closes the JQL string and allows injection.
+        let escaped = query.text.replace('\\', "\\\\").replace('"', "\\\"");
         let mut parts = vec![format!("text ~ \"{}\"", escaped)];
 
         // Project filter
@@ -109,6 +112,16 @@ impl JiraSource {
 
     /// Fetch full details for a single JIRA issue and return Markdown.
     pub async fn get_detail_issue(&self, key: &str) -> Result<String, SearchError> {
+        // Validate JIRA key format (e.g., "FIN-1234", "PLAT-42") to prevent
+        // path-traversal and URL injection.
+        let key_re = regex::Regex::new(r"^[A-Z][A-Z0-9]+-\d+$").unwrap();
+        if !key_re.is_match(key) {
+            return Err(SearchError::Source {
+                source_name: "jira".to_string(),
+                message: format!("Invalid JIRA key format: {}", key),
+            });
+        }
+
         let url = format!("{}/rest/api/3/issue/{}", self.config.base_url, key);
         let fields = "summary,description,status,assignee,reporter,labels,fixVersions,issuelinks,subtasks,comment,priority,issuetype,created,updated";
 

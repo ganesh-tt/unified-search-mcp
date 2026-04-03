@@ -181,8 +181,10 @@ impl ConfluenceSource {
 
     /// Build the CQL query string from the search query and config.
     fn build_cql(&self, query: &SearchQuery) -> String {
-        // Escape double quotes in the query text to prevent CQL injection
-        let escaped_text = query.text.replace('"', r#"\""#);
+        // Escape backslashes FIRST, then quotes, to prevent CQL injection.
+        // If we escape quotes first, a literal `\"` in input becomes `\\"` which
+        // closes the CQL string and allows injection.
+        let escaped_text = query.text.replace('\\', r#"\\"#).replace('"', r#"\""#);
 
         let mut cql = format!(r#"siteSearch ~ "{}""#, escaped_text);
 
@@ -192,7 +194,10 @@ impl ConfluenceSource {
                 .config
                 .spaces
                 .iter()
-                .map(|s| format!(r#""{}""#, s))
+                .map(|s| {
+                    let escaped = s.replace('\\', r#"\\"#).replace('"', r#"\""#);
+                    format!(r#""{}""#, escaped)
+                })
                 .collect();
             cql.push_str(&format!(" AND space IN ({})", space_list.join(",")));
         }
@@ -490,6 +495,14 @@ impl SearchSource for ConfluenceSource {
 impl ConfluenceSource {
     /// Fetch full page details and return a formatted Markdown string.
     pub async fn get_detail_page(&self, page_id: &str) -> Result<String, SearchError> {
+        // Validate page_id is all digits to prevent path-traversal and URL injection.
+        if page_id.is_empty() || !page_id.chars().all(|c| c.is_ascii_digit()) {
+            return Err(SearchError::Source {
+                source_name: "confluence".to_string(),
+                message: format!("Invalid page ID (must be numeric): {}", page_id),
+            });
+        }
+
         let url = format!("{}/wiki/rest/api/content/{}", self.config.base_url, page_id);
 
         let response = self

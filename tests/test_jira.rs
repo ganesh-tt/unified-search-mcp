@@ -703,6 +703,97 @@ async fn get_detail_issue_404_returns_error() {
 }
 
 // ===========================================================================
+// Test 22: jql_escapes_backslashes_and_quotes
+// ===========================================================================
+
+/// A query containing a lone backslash must have it escaped in JQL.
+/// Input `foo\bar` should produce JQL containing `foo\\bar` (backslash doubled).
+/// Without the fix, the backslash passes through unescaped.
+#[tokio::test]
+async fn jql_escapes_backslashes_and_quotes() {
+    let server = MockServer::start().await;
+
+    // Input: foo\bar (contains a single backslash, no quotes)
+    // Correct JQL: text ~ "foo\\bar" (backslash doubled)
+    // Buggy JQL:   text ~ "foo\bar"  (backslash NOT doubled)
+    //
+    // We match on "foo\\\\bar" because query_param_contains gets the
+    // URL-decoded value, and we need the JQL literal "foo\\bar".
+    Mock::given(method("GET"))
+        .and(path("/rest/api/3/search"))
+        .and(query_param_contains("jql", r#"foo\\bar"#))
+        .respond_with(ResponseTemplate::new(200).set_body_json(jira_search_response(vec![])))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = make_config(&server.uri());
+    let source = JiraSource::new(config);
+    let results = source
+        .search(&make_query(r#"foo\bar"#))
+        .await
+        .unwrap();
+    assert_eq!(results.len(), 0);
+    // If mock matched (expect(1)), the backslash was correctly doubled
+}
+
+// ===========================================================================
+// Test 23: get_detail_rejects_invalid_key
+// ===========================================================================
+
+/// Path-traversal or garbage strings should be rejected as JIRA keys.
+#[tokio::test]
+async fn get_detail_rejects_invalid_key() {
+    let server = MockServer::start().await;
+    let config = make_config(&server.uri());
+    let source = JiraSource::new(config);
+
+    let result = source.get_detail_issue("../../admin").await;
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.to_lowercase().contains("invalid"),
+        "Should reject invalid key, got: {}",
+        err
+    );
+}
+
+// ===========================================================================
+// Test 24: get_detail_rejects_empty_key
+// ===========================================================================
+
+#[tokio::test]
+async fn get_detail_rejects_empty_key() {
+    let server = MockServer::start().await;
+    let config = make_config(&server.uri());
+    let source = JiraSource::new(config);
+
+    let result = source.get_detail_issue("").await;
+    assert!(result.is_err());
+}
+
+// ===========================================================================
+// Test 25: get_detail_accepts_valid_key
+// ===========================================================================
+
+#[tokio::test]
+async fn get_detail_accepts_valid_key() {
+    let server = MockServer::start().await;
+    let body = include_str!("../fixtures/jira/issue_detail.json");
+
+    Mock::given(method("GET"))
+        .and(path("/rest/api/3/issue/FIN-1234"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(body, "application/json"))
+        .mount(&server)
+        .await;
+
+    let config = make_config(&server.uri());
+    let source = JiraSource::new(config);
+    let result = source.get_detail_issue("FIN-1234").await;
+    assert!(result.is_ok(), "Valid JIRA key should be accepted");
+}
+
+// ===========================================================================
 // Test 17: time_filter_after_before
 // ===========================================================================
 

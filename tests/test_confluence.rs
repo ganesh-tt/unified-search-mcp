@@ -707,6 +707,120 @@ async fn get_detail_page_preserves_markdown_structure() {
 }
 
 // ===========================================================================
+// 22. cql_escapes_backslashes_and_quotes
+// ===========================================================================
+
+/// A query containing a lone backslash must have it escaped in CQL.
+/// Input `foo\bar` should produce CQL containing `foo\\bar` (backslash doubled).
+#[tokio::test]
+async fn cql_escapes_backslashes_and_quotes() {
+    let server = MockServer::start().await;
+    let body = include_str!("../fixtures/confluence/search_empty.json");
+
+    // Input: foo\bar (contains a single backslash, no quotes)
+    // Correct CQL: siteSearch ~ "foo\\bar" (backslash doubled)
+    // Buggy CQL:   siteSearch ~ "foo\bar"  (backslash NOT doubled)
+    Mock::given(method("GET"))
+        .and(path("/wiki/rest/api/search"))
+        .and(query_param_contains("cql", r#"foo\\bar"#))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(body, "application/json"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = default_config(&server.uri());
+    let source = ConfluenceSource::new(config);
+    let results = source
+        .search(&default_query(r#"foo\bar"#))
+        .await
+        .unwrap();
+    assert_eq!(results.len(), 0);
+}
+
+// ===========================================================================
+// 23. get_detail_page_rejects_non_numeric_id
+// ===========================================================================
+
+/// Path-traversal or non-numeric strings should be rejected as page IDs.
+#[tokio::test]
+async fn get_detail_page_rejects_non_numeric_id() {
+    let server = MockServer::start().await;
+    let config = default_config(&server.uri());
+    let source = ConfluenceSource::new(config);
+
+    let result = source.get_detail_page("../../../etc/passwd").await;
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.to_lowercase().contains("invalid"),
+        "Should reject non-numeric page ID, got: {}",
+        err
+    );
+}
+
+// ===========================================================================
+// 24. get_detail_page_rejects_empty_id
+// ===========================================================================
+
+#[tokio::test]
+async fn get_detail_page_rejects_empty_id() {
+    let server = MockServer::start().await;
+    let config = default_config(&server.uri());
+    let source = ConfluenceSource::new(config);
+
+    let result = source.get_detail_page("").await;
+    assert!(result.is_err());
+}
+
+// ===========================================================================
+// 25. get_detail_page_accepts_valid_numeric_id
+// ===========================================================================
+
+#[tokio::test]
+async fn get_detail_page_accepts_valid_numeric_id() {
+    let server = MockServer::start().await;
+    let body = include_str!("../fixtures/confluence/page_detail.json");
+
+    Mock::given(method("GET"))
+        .and(path("/wiki/rest/api/content/123456"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(body, "application/json"))
+        .mount(&server)
+        .await;
+
+    let config = default_config(&server.uri());
+    let source = ConfluenceSource::new(config);
+    let result = source.get_detail_page("123456").await;
+    assert!(result.is_ok(), "Valid numeric page ID should be accepted");
+}
+
+// ===========================================================================
+// 26. cql_escapes_space_names_with_quotes
+// ===========================================================================
+
+/// Space names containing quotes in config should be escaped in CQL.
+#[tokio::test]
+async fn cql_escapes_space_names_with_quotes() {
+    let server = MockServer::start().await;
+    let body = include_str!("../fixtures/confluence/search_empty.json");
+
+    // Space name with a quote should be escaped
+    Mock::given(method("GET"))
+        .and(path("/wiki/rest/api/search"))
+        .and(query_param_contains("cql", "space IN"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(body, "application/json"))
+        .mount(&server)
+        .await;
+
+    let mut config = default_config(&server.uri());
+    config.spaces = vec![r#"TE"ST"#.to_string()];
+
+    let source = ConfluenceSource::new(config);
+    // Should not panic or produce malformed CQL
+    let results = source.search(&default_query("test")).await.unwrap();
+    assert_eq!(results.len(), 0);
+}
+
+// ===========================================================================
 // 18. search_comment_failure_degrades_gracefully
 // ===========================================================================
 
