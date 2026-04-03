@@ -13,13 +13,25 @@ use crate::sources::SearchSource;
 // Config
 // ===========================================================================
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct JiraConfig {
     pub base_url: String,
     pub email: String,
     pub api_token: String,
     pub projects: Vec<String>,
     pub max_results: usize,
+}
+
+impl std::fmt::Debug for JiraConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("JiraConfig")
+            .field("base_url", &self.base_url)
+            .field("email", &self.email)
+            .field("api_token", &"[REDACTED]")
+            .field("projects", &self.projects)
+            .field("max_results", &self.max_results)
+            .finish()
+    }
 }
 
 // ===========================================================================

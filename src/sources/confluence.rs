@@ -11,7 +11,7 @@ use crate::models::{HealthStatus, SearchError, SearchQuery, SearchResult, Source
 use crate::sources::SearchSource;
 
 /// Configuration for the Confluence search source.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ConfluenceConfig {
     pub base_url: String,
     pub email: String,
@@ -19,6 +19,18 @@ pub struct ConfluenceConfig {
     /// Optional list of space keys to restrict search to.
     pub spaces: Vec<String>,
     pub max_results: usize,
+}
+
+impl std::fmt::Debug for ConfluenceConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConfluenceConfig")
+            .field("base_url", &self.base_url)
+            .field("email", &self.email)
+            .field("api_token", &"[REDACTED]")
+            .field("spaces", &self.spaces)
+            .field("max_results", &self.max_results)
+            .finish()
+    }
 }
 
 /// Confluence search source using the v1 REST API with CQL.

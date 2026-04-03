@@ -19,13 +19,23 @@ use super::SearchSource;
 ///
 /// `user_token` must be a user token (xoxp-...) — bot tokens (xoxb-...) do not
 /// have permission to use `search.messages`.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SlackConfig {
     pub user_token: String,
     pub max_results: usize,
     /// Base URL for the Slack API. Defaults to `https://slack.com` in
     /// production; override with a wiremock URL in tests.
     pub base_url: String,
+}
+
+impl std::fmt::Debug for SlackConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SlackConfig")
+            .field("user_token", &"[REDACTED]")
+            .field("max_results", &self.max_results)
+            .field("base_url", &self.base_url)
+            .finish()
+    }
 }
 
 impl Default for SlackConfig {
