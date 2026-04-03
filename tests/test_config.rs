@@ -246,3 +246,120 @@ sources:
     assert_eq!(cfg.server.log_level, "info");
     assert_eq!(cfg.server.name, "unified-search");
 }
+
+// ============================================================================
+// 10. debug_output_redacts_tokens
+// ============================================================================
+#[test]
+fn debug_output_redacts_tokens() {
+    use unified_search_mcp::sources::slack::SlackConfig;
+    use unified_search_mcp::sources::jira::JiraConfig;
+    use unified_search_mcp::sources::confluence::ConfluenceConfig;
+
+    let slack = SlackConfig {
+        user_token: "xoxp-secret-token-12345".to_string(),
+        max_results: 20,
+        base_url: "https://slack.com".to_string(),
+    };
+    let debug_output = format!("{:?}", slack);
+    assert!(
+        !debug_output.contains("xoxp-secret"),
+        "Debug should not contain token, got: {}",
+        debug_output
+    );
+    assert!(
+        debug_output.contains("REDACTED"),
+        "Debug should show REDACTED, got: {}",
+        debug_output
+    );
+
+    let jira = JiraConfig {
+        base_url: "https://test.atlassian.net".to_string(),
+        email: "user@test.com".to_string(),
+        api_token: "secret-api-token-xyz".to_string(),
+        projects: vec![],
+        max_results: 25,
+    };
+    let debug_output = format!("{:?}", jira);
+    assert!(
+        !debug_output.contains("secret-api-token"),
+        "Debug should not contain api_token, got: {}",
+        debug_output
+    );
+    assert!(
+        debug_output.contains("REDACTED"),
+        "Debug should show REDACTED, got: {}",
+        debug_output
+    );
+
+    let confluence = ConfluenceConfig {
+        base_url: "https://test.atlassian.net".to_string(),
+        email: "user@test.com".to_string(),
+        api_token: "secret-confluence-token".to_string(),
+        spaces: vec![],
+        max_results: 10,
+    };
+    let debug_output = format!("{:?}", confluence);
+    assert!(
+        !debug_output.contains("secret-confluence"),
+        "Debug should not contain api_token, got: {}",
+        debug_output
+    );
+    assert!(
+        debug_output.contains("REDACTED"),
+        "Debug should show REDACTED, got: {}",
+        debug_output
+    );
+}
+
+// ============================================================================
+// 11. rejects_http_base_url_for_jira
+// ============================================================================
+#[test]
+fn rejects_http_base_url_for_jira() {
+    let config_content = r#"
+server:
+  name: test
+sources:
+  jira:
+    enabled: true
+    base_url: "http://insecure.example.com"
+    email: "test@test.com"
+    api_token: "token"
+"#;
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("config.yaml");
+    std::fs::write(&path, config_content).unwrap();
+
+    let result = unified_search_mcp::config::load(path.to_str().unwrap());
+    assert!(result.is_err(), "Should reject http:// base_url");
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.to_lowercase().contains("https"),
+        "Error should mention HTTPS requirement, got: {}",
+        err
+    );
+}
+
+// ============================================================================
+// 12. allows_https_base_url
+// ============================================================================
+#[test]
+fn allows_https_base_url() {
+    let config_content = r#"
+server:
+  name: test
+sources:
+  jira:
+    enabled: true
+    base_url: "https://secure.atlassian.net"
+    email: "test@test.com"
+    api_token: "token"
+"#;
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("config.yaml");
+    std::fs::write(&path, config_content).unwrap();
+
+    let result = unified_search_mcp::config::load(path.to_str().unwrap());
+    assert!(result.is_ok(), "Should accept https:// base_url, got: {:?}", result.err());
+}

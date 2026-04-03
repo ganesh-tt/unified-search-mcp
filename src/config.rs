@@ -396,7 +396,41 @@ fn build_sources(raw: RawSourcesConfig) -> Result<SourcesConfig, SearchError> {
     Ok(config)
 }
 
+fn validate_url_security(url: &str, source_name: &str) -> Result<(), SearchError> {
+    if url.is_empty() {
+        return Ok(()); // Empty URLs are handled elsewhere
+    }
+    // Allow localhost/127.0.0.1 for testing (wiremock)
+    if url.contains("127.0.0.1") || url.contains("localhost") {
+        return Ok(());
+    }
+    if !url.starts_with("https://") {
+        return Err(SearchError::Config(format!(
+            "{} base_url must use HTTPS (got '{}'). Use https:// for security.",
+            source_name, url
+        )));
+    }
+    Ok(())
+}
+
 fn validate_enabled_sources(sources: &SourcesConfig) -> Result<(), SearchError> {
+    // Validate HTTPS for enabled sources with base_url fields
+    if let Some(jira) = &sources.jira {
+        if jira.enabled {
+            validate_url_security(&jira.config.base_url, "jira")?;
+        }
+    }
+    if let Some(confluence) = &sources.confluence {
+        if confluence.enabled {
+            validate_url_security(&confluence.config.base_url, "confluence")?;
+        }
+    }
+    if let Some(slack) = &sources.slack {
+        if slack.enabled {
+            validate_url_security(&slack.config.base_url, "slack")?;
+        }
+    }
+
     let missing = MISSING_ENV_VARS.lock().unwrap();
 
     if missing.is_empty() {
