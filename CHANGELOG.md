@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.3.0 (2026-04-03)
+
+### Added
+- **GitHub source** -- search PRs, issues, and code via `gh` CLI subprocess, scoped to configured orgs/repos
+- **GitHub get_detail** -- full PR details (reviews, line comments, diff stats) and issue details (comments, labels) via `get_detail` tool
+- **GitHub auto-detection** -- GitHub PR/issue URLs auto-detected by `get_detail`; `repo#N` shorthand with explicit `source="github"`
+- **Response caching** -- in-memory LRU cache (max 100 entries, default 5min TTL), `no_cache` parameter for bypass
+- **Confluence Markdown** -- `get_detail` for Confluence pages now returns full Markdown (headings, bold, lists, tables, code blocks, Confluence macros) instead of stripped plain text
+- **`cache_ttl_seconds`** config option (default 300, set 0 to disable)
+- **Cache hit indicator** in response footer (`**Cache**: HIT`)
+
+### Changed
+- `SearchOrchestrator::new()` now accepts `cache_ttl_seconds` parameter
+- `unified_search` and `search_source` tools accept optional `no_cache` parameter
+- `UnifiedSearchResponse` includes `cache_hit: bool` field
+- `get_detail` Confluence output preserves document structure (headings, tables, lists)
+
 ## v0.2.0 (2026-04-02)
 
 ### Added

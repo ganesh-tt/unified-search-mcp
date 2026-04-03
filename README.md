@@ -13,11 +13,14 @@ This MCP server gives your AI assistant one `unified_search` tool that fans out 
 - **Parallel fan-out** -- all sources queried simultaneously via tokio
 - **Cross-source ranking** -- weighted relevance scoring with deduplication
 - **Comments included** -- JIRA and Confluence search results automatically include recent comments
-- **Deep-dive lookups** -- `get_detail` fetches full JIRA tickets, Confluence pages, or Slack threads with all comments, linked issues, subtasks, child pages, and thread replies
-- **Auto-detection** -- pass a JIRA key (`FIN-1234`), Atlassian URL, or Slack permalink and the tool figures out what to fetch
+- **Deep-dive lookups** -- `get_detail` fetches full JIRA tickets, Confluence pages, Slack threads, or GitHub PRs/issues with all comments, reviews, linked issues, subtasks, child pages, and thread replies
+- **Auto-detection** -- pass a JIRA key (`FIN-1234`), Atlassian URL, Slack permalink, or GitHub PR URL and the tool figures out what to fetch
+- **GitHub integration** -- search PRs, issues, and code across repos via `gh` CLI; `get_detail` returns full PR with reviews, line comments, and CI status
+- **Response caching** -- in-memory LRU cache with configurable TTL (default 5min) eliminates redundant API calls; `no_cache` parameter for forced refresh
+- **Rich Confluence output** -- `get_detail` preserves Markdown structure (headings, tables, lists, code blocks, Confluence macros) instead of stripping to plain text
 - **Metrics & adoption tracking** -- JSONL telemetry + `--stats` CLI to see how often the tool is used vs individual MCPs
-- **5 source adapters** -- Slack, Confluence, JIRA, local files (ripgrep), with a plugin architecture for adding more
-- **Lean** -- single binary, ~7MB, ~20MB RAM, <50ms startup
+- **6 source adapters** -- Slack, Confluence, JIRA, GitHub, local files (ripgrep), with a plugin architecture for adding more
+- **Lean** -- single binary, ~7MB, ~12MB RAM, 6ms startup
 - **Preflight check** -- `--verify` validates all credentials, scopes, and paths before first use
 
 ## Why This Over Individual MCPs?
@@ -89,6 +92,7 @@ You only need credentials for sources you want to enable. Skip any you don't use
 |--------|--------------|-----------------|
 | **Slack** | User token (`xoxp-...`) | [api.slack.com/apps](https://api.slack.com/apps) -- Create App -- OAuth -- Add scope `search:read` -- Install -- Copy **User** OAuth Token |
 | **Confluence + JIRA** | Email + API token | [id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens) |
+| **GitHub** | `gh` CLI authenticated | [cli.github.com](https://cli.github.com/) -- install, then `gh auth login` |
 | **Local files** | File paths only | No credentials. Optional: install [ripgrep](https://github.com/BurntSushi/ripgrep) for speed. |
 
 > **Slack note:** You must use a **user token** (`xoxp-...`), not a bot token (`xoxb-...`). The `search.messages` API requires user-level access.
@@ -202,9 +206,9 @@ Ready! 4 sources configured, 4 healthy.
 
 | Tool | Description |
 |------|-------------|
-| `unified_search` | Search all enabled sources in parallel. Returns a ranked Markdown table with comments included. |
-| `search_source` | Search a single named source (`slack`, `confluence`, `jira`, `local_text`). Returns JSON. |
-| `get_detail` | Fetch full details for a specific item. Auto-detects JIRA keys, Atlassian URLs, Slack permalinks. Returns rich Markdown. |
+| `unified_search` | Search all enabled sources in parallel. Returns a ranked Markdown table with comments. Supports `no_cache` for forced refresh. |
+| `search_source` | Search a single named source (`slack`, `confluence`, `jira`, `github`, `local_text`). Returns JSON. Supports `no_cache`. |
+| `get_detail` | Fetch full details for a specific item. Auto-detects JIRA keys, Atlassian URLs, Slack permalinks, GitHub PR/issue URLs. Returns rich Markdown. |
 | `list_sources` | Show enabled sources and their health/latency status. |
 | `index_local` | Trigger vector index rebuild (Phase 2 -- not yet available). |
 

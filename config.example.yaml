@@ -4,6 +4,7 @@ server:
   timeout_seconds: 10
   log_level: "info"
   metrics_path: "~/.unified-search/metrics.jsonl"
+  cache_ttl_seconds: 300        # response cache TTL in seconds (0 = disabled)
 
 sources:
   slack:
@@ -27,6 +28,13 @@ sources:
     email: "${ATLASSIAN_EMAIL}"
     api_token: "${ATLASSIAN_API_TOKEN}"
     projects: []
+    weight: 1.0
+    max_results: 10
+
+  github:
+    enabled: false
+    orgs: ["your-org"]          # GitHub org(s) to search
+    repos: []                   # optional: restrict to repos (empty = all in org)
     weight: 1.0
     max_results: 10
 
