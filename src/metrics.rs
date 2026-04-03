@@ -71,14 +71,14 @@ fn write_entry(path: &PathBuf, entry: &MetricsEntry) -> std::io::Result<()> {
         if let Some(q) = obj.get_mut("query") {
             if let Some(s) = q.as_str() {
                 if s.len() > 100 {
-                    *q = serde_json::Value::String(format!("{}...", &s[..100]));
+                    *q = serde_json::Value::String(format!("{}...", s.chars().take(100).collect::<String>()));
                 }
             }
         }
         if let Some(id) = obj.get_mut("identifier") {
             if let Some(s) = id.as_str() {
                 if s.len() > 100 {
-                    *id = serde_json::Value::String(format!("{}...", &s[..100]));
+                    *id = serde_json::Value::String(format!("{}...", s.chars().take(100).collect::<String>()));
                 }
             }
         }

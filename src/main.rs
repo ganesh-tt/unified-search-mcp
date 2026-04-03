@@ -52,7 +52,7 @@ async fn main() {
             // Build a server with no sources and serve via MCP
             let orchestrator = SearchOrchestrator::new(vec![], OrchestratorConfig::default(), 0);
             let server = UnifiedSearchServer::new(orchestrator, None, None, None, None, None);
-            eprintln!("unified-search-mcp v0.1.0 -- 0 source(s) ready (no config loaded)");
+            eprintln!("unified-search-mcp v{} -- 0 source(s) ready (no config loaded)", env!("CARGO_PKG_VERSION"));
             mcp::serve_stdio(server).await;
             return;
         }
@@ -152,7 +152,8 @@ async fn main() {
 
     // Stdout is now the MCP JSON-RPC channel -- all diagnostics go to stderr
     eprintln!(
-        "unified-search-mcp v0.1.0 -- {} source(s) ready: {}",
+        "unified-search-mcp v{} -- {} source(s) ready: {}",
+        env!("CARGO_PKG_VERSION"),
         source_count, app_config.server.name,
     );
 

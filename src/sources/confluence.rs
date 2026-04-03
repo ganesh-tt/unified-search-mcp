@@ -798,8 +798,8 @@ impl ConfluenceSource {
 
                             let body_text = self.html_tag_re.replace_all(body_html, "").to_string();
                             let body_text = body_text.trim();
-                            let body_truncated = if body_text.len() > 150 {
-                                format!("{}…", &body_text[..150])
+                            let body_truncated = if body_text.chars().count() > 150 {
+                                format!("{}...", body_text.chars().take(150).collect::<String>())
                             } else {
                                 body_text.to_string()
                             };

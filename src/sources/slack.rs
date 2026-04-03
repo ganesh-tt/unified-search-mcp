@@ -440,8 +440,8 @@ impl SearchSource for SlackSource {
                 }
 
                 // Use a sensible title — first 80 chars of snippet, or "Slack message"
-                let title = if snippet.len() > 80 {
-                    format!("{}...", &snippet[..80])
+                let title = if snippet.chars().count() > 80 {
+                    format!("{}...", snippet.chars().take(80).collect::<String>())
                 } else if snippet.is_empty() {
                     "Slack message".to_string()
                 } else {

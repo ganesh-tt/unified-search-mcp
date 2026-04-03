@@ -458,8 +458,8 @@ impl GitHubSource {
                 let title = format!("{}#{}: {} [{}]", repo_name, number, title_text, kind);
 
                 // Snippet: first 200 chars of body
-                let snippet = if body_text.len() > 200 {
-                    format!("{}...", &body_text[..200])
+                let snippet = if body_text.chars().count() > 200 {
+                    format!("{}...", body_text.chars().take(200).collect::<String>())
                 } else {
                     body_text.to_string()
                 };
