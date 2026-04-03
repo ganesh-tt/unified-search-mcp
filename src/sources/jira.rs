@@ -1,5 +1,12 @@
 use std::collections::HashMap;
+use std::sync::LazyLock;
 use std::time::Instant;
+
+use regex::Regex;
+
+static JIRA_KEY_VALIDATE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[A-Z][A-Z0-9]+-\d+$").unwrap()
+});
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -126,8 +133,7 @@ impl JiraSource {
     pub async fn get_detail_issue(&self, key: &str) -> Result<String, SearchError> {
         // Validate JIRA key format (e.g., "FIN-1234", "PLAT-42") to prevent
         // path-traversal and URL injection.
-        let key_re = regex::Regex::new(r"^[A-Z][A-Z0-9]+-\d+$").unwrap();
-        if !key_re.is_match(key) {
+        if !JIRA_KEY_VALIDATE_RE.is_match(key) {
             return Err(SearchError::Source {
                 source_name: "jira".to_string(),
                 message: format!("Invalid JIRA key format: {}", key),

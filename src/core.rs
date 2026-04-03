@@ -66,7 +66,7 @@ impl SearchOrchestrator {
                 let source_names: Vec<String> = active_sources.iter().map(|s| s.name().to_string()).collect();
                 let source_refs: Vec<&str> = source_names.iter().map(|s| s.as_str()).collect();
                 if let Ok(mut cache) = cache_mutex.lock() {
-                    if let Some(cached) = cache.get(&query.text, &source_refs) {
+                    if let Some(cached) = cache.get(&query.text, &source_refs, query.max_results) {
                         return cached;
                     }
                 }
@@ -229,7 +229,7 @@ impl SearchOrchestrator {
             let source_names: Vec<String> = active_sources.iter().map(|s| s.name().to_string()).collect();
             let source_refs: Vec<&str> = source_names.iter().map(|s| s.as_str()).collect();
             if let Ok(mut cache) = cache_mutex.lock() {
-                cache.put(&query.text, &source_refs, response.clone());
+                cache.put(&query.text, &source_refs, query.max_results, response.clone());
             }
         }
 
@@ -237,11 +237,8 @@ impl SearchOrchestrator {
     }
 
     pub async fn health_check_all(&self) -> Vec<SourceHealth> {
-        let mut results = Vec::new();
-        for source in &self.sources {
-            results.push(source.health_check().await);
-        }
-        results
+        let futures: Vec<_> = self.sources.iter().map(|s| s.health_check()).collect();
+        futures::future::join_all(futures).await
     }
 }
 

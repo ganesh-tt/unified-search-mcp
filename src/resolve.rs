@@ -1,4 +1,33 @@
+use std::sync::LazyLock;
 use regex::Regex;
+
+static JIRA_URL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^https?://([^/]+\.atlassian\.net)/browse/([A-Z][A-Z0-9]+-\d+)$").unwrap()
+});
+
+static CONFLUENCE_URL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^https?://[^/]+\.atlassian\.net/wiki/spaces/[^/]+/pages/(\d+)").unwrap()
+});
+
+static SLACK_URL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^https?://[^/]+\.slack\.com/archives/([A-Z0-9]+)/p(\d+)$").unwrap()
+});
+
+static GITHUB_PR_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)").unwrap()
+});
+
+static GITHUB_ISSUE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^https?://github\.com/([^/]+)/([^/]+)/issues/(\d+)").unwrap()
+});
+
+static JIRA_KEY_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[A-Z][A-Z0-9]+-\d+$").unwrap()
+});
+
+static GITHUB_SHORTHAND_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^([a-zA-Z0-9._-]+)#(\d+)$").unwrap()
+});
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SourceType {
@@ -29,29 +58,20 @@ pub fn detect_source(identifier: &str) -> Option<(SourceType, ParsedIdentifier)>
     }
 
     // Priority 1: Atlassian JIRA URL
-    let jira_url_re = Regex::new(
-        r"^https?://([^/]+\.atlassian\.net)/browse/([A-Z][A-Z0-9]+-\d+)$"
-    ).ok()?;
-    if let Some(caps) = jira_url_re.captures(id) {
+    if let Some(caps) = JIRA_URL_RE.captures(id) {
         let base_url = format!("https://{}", &caps[1]);
         let key = caps[2].to_string();
         return Some((SourceType::Jira, ParsedIdentifier::JiraUrl { base_url, key }));
     }
 
     // Priority 2: Confluence URL
-    let confluence_url_re = Regex::new(
-        r"^https?://[^/]+\.atlassian\.net/wiki/spaces/[^/]+/pages/(\d+)"
-    ).ok()?;
-    if let Some(caps) = confluence_url_re.captures(id) {
+    if let Some(caps) = CONFLUENCE_URL_RE.captures(id) {
         let page_id = caps[1].to_string();
         return Some((SourceType::Confluence, ParsedIdentifier::ConfluencePageId(page_id)));
     }
 
     // Priority 3: Slack archive URL
-    let slack_url_re = Regex::new(
-        r"^https?://[^/]+\.slack\.com/archives/([A-Z0-9]+)/p(\d+)$"
-    ).ok()?;
-    if let Some(caps) = slack_url_re.captures(id) {
+    if let Some(caps) = SLACK_URL_RE.captures(id) {
         let channel = caps[1].to_string();
         let raw_ts = &caps[2];
         let ts = if raw_ts.len() > 6 {
@@ -64,10 +84,7 @@ pub fn detect_source(identifier: &str) -> Option<(SourceType, ParsedIdentifier)>
     }
 
     // Priority 4: GitHub PR URL
-    let github_pr_re = Regex::new(
-        r"^https?://github\.com/([^/]+)/([^/]+)/pull/(\d+)"
-    ).ok()?;
-    if let Some(caps) = github_pr_re.captures(id) {
+    if let Some(caps) = GITHUB_PR_RE.captures(id) {
         let owner = caps[1].to_string();
         let repo = caps[2].to_string();
         let number: u64 = caps[3].parse().ok()?;
@@ -75,10 +92,7 @@ pub fn detect_source(identifier: &str) -> Option<(SourceType, ParsedIdentifier)>
     }
 
     // Priority 5: GitHub Issue URL
-    let github_issue_re = Regex::new(
-        r"^https?://github\.com/([^/]+)/([^/]+)/issues/(\d+)"
-    ).ok()?;
-    if let Some(caps) = github_issue_re.captures(id) {
+    if let Some(caps) = GITHUB_ISSUE_RE.captures(id) {
         let owner = caps[1].to_string();
         let repo = caps[2].to_string();
         let number: u64 = caps[3].parse().ok()?;
@@ -86,8 +100,7 @@ pub fn detect_source(identifier: &str) -> Option<(SourceType, ParsedIdentifier)>
     }
 
     // Priority 6: JIRA key pattern (2+ uppercase letters, dash, 1+ digits)
-    let jira_key_re = Regex::new(r"^[A-Z][A-Z0-9]+-\d+$").ok()?;
-    if jira_key_re.is_match(id) {
+    if JIRA_KEY_RE.is_match(id) {
         return Some((SourceType::Jira, ParsedIdentifier::JiraKey(id.to_string())));
     }
 
@@ -124,8 +137,7 @@ pub fn force_source(identifier: &str, source: &str) -> Option<(SourceType, Parse
                 .filter(|(st, _)| matches!(st, SourceType::GitHub))
                 .or_else(|| {
                     // Try repo#number shorthand
-                    let shorthand_re = Regex::new(r"^([a-zA-Z0-9._-]+)#(\d+)$").ok()?;
-                    if let Some(caps) = shorthand_re.captures(id) {
+                    if let Some(caps) = GITHUB_SHORTHAND_RE.captures(id) {
                         let repo = caps[1].to_string();
                         let number: u64 = caps[2].parse().ok()?;
                         Some((SourceType::GitHub, ParsedIdentifier::GitHubShorthand { repo, number }))
