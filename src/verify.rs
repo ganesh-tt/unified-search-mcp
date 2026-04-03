@@ -3,6 +3,7 @@ use std::path::Path;
 use crate::config::AppConfig;
 use crate::models::HealthStatus;
 use crate::sources::confluence::ConfluenceSource;
+use crate::sources::github::GitHubSource;
 use crate::sources::jira::JiraSource;
 use crate::sources::local_text::LocalTextSource;
 use crate::sources::slack::SlackSource;
@@ -153,6 +154,34 @@ pub async fn verify(config: &AppConfig, config_path: &str) -> bool {
         }
     }
 
+    // --- GitHub ---
+    if let Some(ref github_cfg) = config.sources.github {
+        if github_cfg.enabled {
+            source_count += 1;
+            let source = GitHubSource::new(github_cfg.config.clone());
+            let health = source.health_check().await;
+            match health.status {
+                HealthStatus::Healthy => {
+                    let detail = health.message.unwrap_or_else(|| "OK".to_string());
+                    let latency = format_latency(health.latency_ms);
+                    println!("[OK]  GitHub: {} {}", detail, latency);
+                    healthy_count += 1;
+                }
+                HealthStatus::Degraded => {
+                    let detail = health.message.unwrap_or_else(|| "degraded".to_string());
+                    println!("[WARN] GitHub: {}", detail);
+                    healthy_count += 1;
+                }
+                HealthStatus::Unavailable => {
+                    let detail = health.message.unwrap_or_else(|| "unavailable".to_string());
+                    println!("[FAIL] GitHub: {}", detail);
+                    println!("       Fix: run 'gh auth login' to authenticate the gh CLI");
+                    fail_count += 1;
+                }
+            }
+        }
+    }
+
     // --- Ripgrep check ---
     check_ripgrep();
 
@@ -183,6 +212,9 @@ fn count_enabled(config: &AppConfig) -> usize {
         n += 1;
     }
     if config.sources.local_text.as_ref().map_or(false, |s| s.enabled) {
+        n += 1;
+    }
+    if config.sources.github.as_ref().map_or(false, |s| s.enabled) {
         n += 1;
     }
     n

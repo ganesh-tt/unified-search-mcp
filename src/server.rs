@@ -7,6 +7,7 @@ use crate::metrics::{MetricsEntry, MetricsLogger};
 use crate::models::{SearchFilters, SearchQuery, SearchResult};
 use crate::resolve::{detect_source, force_source, ParsedIdentifier, SourceType};
 use crate::sources::confluence::ConfluenceSource;
+use crate::sources::github::GitHubSource;
 use crate::sources::jira::JiraSource;
 use crate::sources::slack::SlackSource;
 
@@ -25,6 +26,7 @@ pub struct UnifiedSearchServer {
     jira_source: Option<JiraSource>,
     confluence_source: Option<ConfluenceSource>,
     slack_source: Option<SlackSource>,
+    github_source: Option<GitHubSource>,
     metrics: Option<MetricsLogger>,
 }
 
@@ -36,6 +38,7 @@ impl UnifiedSearchServer {
         jira_source: Option<JiraSource>,
         confluence_source: Option<ConfluenceSource>,
         slack_source: Option<SlackSource>,
+        github_source: Option<GitHubSource>,
         metrics: Option<MetricsLogger>,
     ) -> Self {
         Self {
@@ -43,6 +46,7 @@ impl UnifiedSearchServer {
             jira_source,
             confluence_source,
             slack_source,
+            github_source,
             metrics,
         }
     }
@@ -400,9 +404,56 @@ impl UnifiedSearchServer {
                 }
             },
             SourceType::GitHub => {
-                // GitHub get_detail will be wired in Task 9
-                let msg = "Error: GitHub source not yet wired into server".to_string();
-                (msg.clone(), Some(msg))
+                match &self.github_source {
+                    Some(src) => {
+                        match parsed {
+                            ParsedIdentifier::GitHubPR { owner, repo, number } => {
+                                match src.get_detail_pr(&owner, &repo, number).await {
+                                    Ok(md) => (md, None),
+                                    Err(e) => {
+                                        let msg = format!("Error: {}", e);
+                                        (msg.clone(), Some(msg))
+                                    }
+                                }
+                            }
+                            ParsedIdentifier::GitHubIssue { owner, repo, number } => {
+                                match src.get_detail_issue(&owner, &repo, number).await {
+                                    Ok(md) => (md, None),
+                                    Err(e) => {
+                                        let msg = format!("Error: {}", e);
+                                        (msg.clone(), Some(msg))
+                                    }
+                                }
+                            }
+                            ParsedIdentifier::GitHubShorthand { repo, number } => {
+                                // Need to determine if it's a PR or issue -- try PR first, fall back to issue.
+                                // For shorthand, we need the org. Use the first org from config.
+                                // This is a limitation -- shorthand only works with single-org setups.
+                                let owner = src.default_org().unwrap_or_else(|| "unknown".to_string());
+                                match src.get_detail_pr(&owner, &repo, number).await {
+                                    Ok(md) => (md, None),
+                                    Err(_) => {
+                                        match src.get_detail_issue(&owner, &repo, number).await {
+                                            Ok(md) => (md, None),
+                                            Err(e) => {
+                                                let msg = format!("Error: {}", e);
+                                                (msg.clone(), Some(msg))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {
+                                let msg = "Error: unexpected parsed identifier for GitHub".to_string();
+                                (msg.clone(), Some(msg))
+                            }
+                        }
+                    }
+                    None => {
+                        let msg = "Error: GitHub source not configured".to_string();
+                        (msg.clone(), Some(msg))
+                    }
+                }
             }
         };
 

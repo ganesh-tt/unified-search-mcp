@@ -6,6 +6,7 @@ use unified_search_mcp::core::{OrchestratorConfig, SearchOrchestrator};
 use unified_search_mcp::mcp;
 use unified_search_mcp::server::UnifiedSearchServer;
 use unified_search_mcp::sources::confluence::ConfluenceSource;
+use unified_search_mcp::sources::github::GitHubSource;
 use unified_search_mcp::sources::jira::JiraSource;
 use unified_search_mcp::sources::local_text::LocalTextSource;
 use unified_search_mcp::sources::slack::SlackSource;
@@ -50,7 +51,7 @@ async fn main() {
 
             // Build a server with no sources and serve via MCP
             let orchestrator = SearchOrchestrator::new(vec![], OrchestratorConfig::default(), 0);
-            let server = UnifiedSearchServer::new(orchestrator, None, None, None, None);
+            let server = UnifiedSearchServer::new(orchestrator, None, None, None, None, None);
             eprintln!("unified-search-mcp v0.1.0 -- 0 source(s) ready (no config loaded)");
             mcp::serve_stdio(server).await;
             return;
@@ -102,6 +103,13 @@ async fn main() {
         }
     }
 
+    if let Some(ref github_cfg) = app_config.sources.github {
+        if github_cfg.enabled {
+            source_weights.insert("github".to_string(), github_cfg.weight);
+            sources.push(Box::new(GitHubSource::new(github_cfg.config.clone())));
+        }
+    }
+
     let source_count = sources.len();
 
     // Build per-source instances for get_detail lookups
@@ -123,6 +131,12 @@ async fn main() {
         .as_ref()
         .filter(|c| c.enabled)
         .map(|c| SlackSource::new(c.config.clone()));
+    let github_detail = app_config
+        .sources
+        .github
+        .as_ref()
+        .filter(|c| c.enabled)
+        .map(|c| GitHubSource::new(c.config.clone()));
 
     let orchestrator_config = OrchestratorConfig {
         timeout_seconds: app_config.server.timeout_seconds,
@@ -134,7 +148,7 @@ async fn main() {
     let metrics = unified_search_mcp::metrics::MetricsLogger::new(std::path::PathBuf::from(metrics_path));
 
     let orchestrator = SearchOrchestrator::new(sources, orchestrator_config, app_config.server.cache_ttl_seconds);
-    let server = UnifiedSearchServer::new(orchestrator, jira_detail, confluence_detail, slack_detail, Some(metrics));
+    let server = UnifiedSearchServer::new(orchestrator, jira_detail, confluence_detail, slack_detail, github_detail, Some(metrics));
 
     // Stdout is now the MCP JSON-RPC channel -- all diagnostics go to stderr
     eprintln!(

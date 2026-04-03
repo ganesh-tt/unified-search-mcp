@@ -41,12 +41,18 @@ impl Default for GitHubConfig {
 // ---------------------------------------------------------------------------
 
 pub struct GitHubSource {
-    config: GitHubConfig,
+    pub(crate) config: GitHubConfig,
 }
 
 impl GitHubSource {
     pub fn new(config: GitHubConfig) -> Self {
         Self { config }
+    }
+
+    /// Return the first configured org name, if any.
+    /// Used for `repo#N` shorthand resolution.
+    pub fn default_org(&self) -> Option<String> {
+        self.config.orgs.first().cloned()
     }
 
     /// Run a `gh` CLI command and return its stdout on success.

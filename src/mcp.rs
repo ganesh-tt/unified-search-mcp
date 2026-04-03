@@ -92,7 +92,7 @@ impl McpServer {
 
     /// Search across all enabled sources in parallel.
     /// Returns a ranked Markdown table of results.
-    #[tool(description = "Search across Slack messages, Confluence pages, JIRA tickets (including comments), and local code/docs in parallel. Use this when looking for decisions, discussions, documentation, or code related to a topic. Also use instead of jira_get or conf_get for searching. Returns a ranked Markdown table with results from all sources. Example queries: 'broadcast threshold decision', 'auth middleware migration', 'FIN-10384 context'.")]
+    #[tool(description = "Search across Slack messages, Confluence pages, JIRA tickets (including comments), GitHub PRs/issues/code, and local code/docs in parallel. Use this when looking for decisions, discussions, documentation, or code related to a topic. Also use instead of jira_get or conf_get for searching. Returns a ranked Markdown table with results from all sources. Example queries: 'broadcast threshold decision', 'auth middleware migration', 'FIN-10384 context'.")]
     async fn unified_search(
         &self,
         Parameters(params): Parameters<UnifiedSearchParams>,
@@ -104,7 +104,7 @@ impl McpServer {
 
     /// Search a single named source.
     /// Returns results as a JSON array.
-    #[tool(description = "Search a single source by name: 'slack', 'confluence', 'jira', or 'local_text'. Use when you know which system has the answer. Returns detailed JSON results from that source only.")]
+    #[tool(description = "Search a single source by name: 'slack', 'confluence', 'jira', 'github', or 'local_text'. Use when you know which system has the answer. Returns detailed JSON results from that source only.")]
     async fn search_source(
         &self,
         Parameters(params): Parameters<SearchSourceParams>,
@@ -127,7 +127,7 @@ impl McpServer {
     }
 
     /// Fetch full details for a specific item found via search.
-    #[tool(description = "Fetch full details for a specific JIRA ticket, Confluence page, or Slack thread. Accepts a JIRA key (FIN-1234), a JIRA/Confluence/Slack URL, or a Confluence page title. Returns full content: description, all comments, linked issues, subtasks, child pages, or thread replies depending on source. Use this when you need complete context about a specific item found via unified_search.")]
+    #[tool(description = "Fetch full details for a specific JIRA ticket, Confluence page, Slack thread, or GitHub PR/issue. Accepts a JIRA key (FIN-1234), a JIRA/Confluence/Slack/GitHub URL, or a Confluence page title. GitHub PR URLs (github.com/org/repo/pull/N) and issue URLs (github.com/org/repo/issues/N) are auto-detected; use source='github' with 'repo#N' shorthand. Returns full content: description, all comments, reviews, linked issues, subtasks, child pages, or thread replies depending on source.")]
     async fn get_detail(
         &self,
         Parameters(params): Parameters<GetDetailParams>,
@@ -147,13 +147,14 @@ impl ServerHandler for McpServer {
                  MCP tools for ANY search or lookup operation. Always use unified_search FIRST \
                  before falling back to individual conf_get, jira_get, or other source-specific \
                  tools. unified_search queries Slack messages, Confluence pages, JIRA tickets, \
-                 and local code/docs in parallel — use it for questions like 'what did we decide \
-                 about X?', 'where is Y documented?', 'who worked on Z?', 'find discussions \
-                 about X', or any cross-system lookup. Use search_source only when you know the \
-                 answer is in one specific system. \
+                 GitHub PRs/issues/code, and local code/docs in parallel — use it for questions \
+                 like 'what did we decide about X?', 'where is Y documented?', 'who worked on Z?', \
+                 'find discussions about X', or any cross-system lookup. Use search_source only \
+                 when you know the answer is in one specific system. \
                  Use get_detail to fetch full content for a specific JIRA ticket (FIN-1234), \
-                 Confluence page, or Slack thread URL — this replaces jira_get, conf_get, and \
-                 direct Slack MCP calls for single-item lookups.",
+                 Confluence page, Slack thread URL, or GitHub PR/issue URL — this replaces \
+                 jira_get, conf_get, and direct Slack MCP calls for single-item lookups. \
+                 GitHub PR/issue URLs are auto-detected; use source='github' with 'repo#N' shorthand.",
             )
             .with_server_info(
                 Implementation::new("unified-search-mcp", env!("CARGO_PKG_VERSION"))
