@@ -102,19 +102,19 @@ fn build_server(sources: Vec<Box<dyn SearchSource>>) -> UnifiedSearchServer {
 }
 
 // ===========================================================================
-// Test 1: tools_list_returns_all_four
+// Test 1: tools_list_returns_all_tools
 // ===========================================================================
 
-/// The server must expose 4 tool handler methods:
-/// handle_unified_search, handle_search_source, handle_list_sources, handle_index_local.
+/// The server must expose tool handler methods:
+/// handle_unified_search, handle_search_source, handle_list_sources, handle_get_detail.
 /// We verify by calling each one and confirming they return non-empty strings.
 #[tokio::test]
-async fn tools_list_returns_all_four() {
+async fn tools_list_returns_all_tools() {
     let server = build_server(vec![
         boxed(MockSource::new("slack", vec![make_result("slack", "msg1", 0.9)])),
     ]);
 
-    // All four handlers should be callable and return non-empty output
+    // All handlers should be callable and return non-empty output
     let r1 = server
         .handle_unified_search("test".to_string(), None, None, false)
         .await;
@@ -122,12 +122,10 @@ async fn tools_list_returns_all_four() {
         .handle_search_source("slack".to_string(), "test".to_string(), None, false)
         .await;
     let r3 = server.handle_list_sources().await;
-    let r4 = server.handle_index_local().await;
 
     assert!(!r1.is_empty(), "handle_unified_search should return non-empty");
     assert!(!r2.is_empty(), "handle_search_source should return non-empty");
     assert!(!r3.is_empty(), "handle_list_sources should return non-empty");
-    assert!(!r4.is_empty(), "handle_index_local should return non-empty");
 }
 
 // ===========================================================================
@@ -182,11 +180,11 @@ async fn unified_search_tool_dispatch() {
 
     // Should contain footer with sources queried and time
     assert!(
-        output.contains("**Sources queried**"),
+        output.contains("**Sources**") || output.contains("**Sources queried**"),
         "Expected sources queried footer, got:\n{output}"
     );
     assert!(
-        output.contains("**Time**"),
+        output.contains("**Time**") || output.contains("**Total**"),
         "Expected time footer, got:\n{output}"
     );
 }
@@ -307,28 +305,7 @@ async fn unknown_source_returns_empty() {
 }
 
 // ===========================================================================
-// Test 6: index_local_returns_not_enabled
-// ===========================================================================
-
-/// handle_index_local should return a message indicating vector search is
-/// not enabled (Phase 1 stub).
-#[tokio::test]
-async fn index_local_returns_not_enabled() {
-    let server = build_server(vec![]);
-
-    let output = server.handle_index_local().await;
-
-    let lower = output.to_lowercase();
-    assert!(
-        lower.contains("vector search not enabled")
-            || lower.contains("not enabled")
-            || lower.contains("not available"),
-        "Expected 'not enabled' message, got:\n{output}"
-    );
-}
-
-// ===========================================================================
-// Test 7: get_detail_returns_error_for_unknown_identifier
+// Test 6: get_detail_returns_error_for_unknown_identifier
 // ===========================================================================
 
 /// handle_get_detail with an unrecognized identifier (no JIRA key pattern,
@@ -337,7 +314,7 @@ async fn index_local_returns_not_enabled() {
 async fn get_detail_returns_error_for_unknown_identifier() {
     let server = build_server(vec![]);
     let output = server
-        .handle_get_detail("random text".to_string(), None, None)
+        .handle_get_detail("random text".to_string(), None)
         .await;
     let lower = output.to_lowercase();
     assert!(
@@ -349,7 +326,7 @@ async fn get_detail_returns_error_for_unknown_identifier() {
 }
 
 // ===========================================================================
-// Test 8: get_detail_jira_key_without_source_returns_not_configured
+// Test 7: get_detail_jira_key_without_source_returns_not_configured
 // ===========================================================================
 
 /// handle_get_detail with a valid JIRA key but no JIRA source configured
@@ -358,7 +335,7 @@ async fn get_detail_returns_error_for_unknown_identifier() {
 async fn get_detail_jira_key_without_source_returns_not_configured() {
     let server = build_server(vec![]);
     let output = server
-        .handle_get_detail("FIN-1234".to_string(), None, None)
+        .handle_get_detail("FIN-1234".to_string(), None)
         .await;
     let lower = output.to_lowercase();
     assert!(

@@ -8,13 +8,13 @@ server:
 
 sources:
   slack:
-    enabled: true
+    enabled: false    # Set to true and configure credentials to enable
     user_token: "${SLACK_USER_TOKEN}"
     weight: 1.0
     max_results: 10
 
   confluence:
-    enabled: true
+    enabled: false    # Set to true and configure credentials to enable
     base_url: "${ATLASSIAN_BASE_URL}"
     email: "${ATLASSIAN_EMAIL}"
     api_token: "${ATLASSIAN_API_TOKEN}"
@@ -23,7 +23,7 @@ sources:
     max_results: 10
 
   jira:
-    enabled: true
+    enabled: false    # Set to true and configure credentials to enable
     base_url: "${ATLASSIAN_BASE_URL}"
     email: "${ATLASSIAN_EMAIL}"
     api_token: "${ATLASSIAN_API_TOKEN}"
@@ -39,7 +39,7 @@ sources:
     max_results: 10
 
   local_text:
-    enabled: true
+    enabled: false    # Set to true and configure credentials to enable
     paths:
       - "~/projects/my-repo"
     include_patterns:

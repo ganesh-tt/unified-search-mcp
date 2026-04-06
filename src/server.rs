@@ -20,7 +20,7 @@ use crate::sources::slack::SlackSource;
 /// | `unified_search`    | `handle_unified_search`   |
 /// | `search_source`     | `handle_search_source`    |
 /// | `list_sources`      | `handle_list_sources`     |
-/// | `index_local`       | `handle_index_local`      |
+/// | `get_detail`        | `handle_get_detail`       |
 pub struct UnifiedSearchServer {
     orchestrator: SearchOrchestrator,
     jira_source: Option<JiraSource>,
@@ -133,11 +133,18 @@ impl UnifiedSearchServer {
         }
 
         // Footer: sources queried + time
-        let _ = write!(
-            md,
-            "**Sources queried**: {} | **Time**: {}ms",
-            response.total_sources_queried, response.query_time_ms,
-        );
+        if !response.per_source_stats.is_empty() {
+            let parts: Vec<String> = response.per_source_stats.iter().map(|s| {
+                format!("{} ({}ms, {} results)", s.source, s.latency_ms, s.result_count)
+            }).collect();
+            let _ = write!(md, "**Sources**: {} | **Total**: {}ms", parts.join(" | "), response.query_time_ms);
+        } else {
+            let _ = write!(
+                md,
+                "**Sources queried**: {} | **Time**: {}ms",
+                response.total_sources_queried, response.query_time_ms,
+            );
+        }
 
         if response.cache_hit {
             let _ = write!(md, " | **Cache**: HIT");
@@ -263,16 +270,6 @@ impl UnifiedSearchServer {
     }
 
     // -----------------------------------------------------------------------
-    // Tool: index_local
-    // -----------------------------------------------------------------------
-
-    /// Phase 1 stub — vector search is not yet available.
-    pub async fn handle_index_local(&self) -> String {
-        "Vector search not enabled. Local file indexing will be available in a future release."
-            .to_string()
-    }
-
-    // -----------------------------------------------------------------------
     // Tool: get_detail
     // -----------------------------------------------------------------------
 
@@ -285,7 +282,6 @@ impl UnifiedSearchServer {
         &self,
         identifier: String,
         source: Option<String>,
-        _max_comments: Option<usize>,
     ) -> String {
         let start = std::time::Instant::now();
 

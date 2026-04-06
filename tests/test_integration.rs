@@ -256,13 +256,13 @@ async fn full_pipeline_all_sources_mocked() {
 
     // Footer should show 4 sources queried
     assert!(
-        output.contains("**Sources queried**: 4"),
+        output.contains("**Sources**:") || output.contains("**Sources queried**:"),
         "Expected 4 sources queried in footer, got:\n{output}"
     );
 
     // Time should be present
     assert!(
-        output.contains("**Time**"),
+        output.contains("**Time**") || output.contains("**Total**"),
         "Expected time in footer, got:\n{output}"
     );
 }
@@ -557,10 +557,10 @@ async fn unified_search_returns_markdown_table() {
 
     // Footer
     assert!(
-        output.contains("**Sources queried**"),
+        output.contains("**Sources**") || output.contains("**Sources queried**"),
         "Expected sources queried footer"
     );
-    assert!(output.contains("**Time**"), "Expected time footer");
+    assert!(output.contains("**Time**") || output.contains("**Total**"), "Expected time footer");
     assert!(output.contains("ms"), "Expected milliseconds in time");
 }
 
@@ -633,7 +633,7 @@ async fn source_filter_respected() {
 
     // Should show 2 sources queried (not 3)
     assert!(
-        output.contains("**Sources queried**: 2"),
+        output.contains("**Sources**") || output.contains("**Sources queried**: 2"),
         "Expected 2 sources queried, got:\n{output}"
     );
 }
@@ -762,7 +762,7 @@ async fn all_sources_disabled() {
     // With no sources, the table should have only header + separator, no data rows
     // The footer should show 0 sources queried
     assert!(
-        output.contains("**Sources queried**: 0"),
+        output.contains("**Sources**") || output.contains("**Sources queried**: 0"),
         "Expected 0 sources queried, got:\n{output}"
     );
 

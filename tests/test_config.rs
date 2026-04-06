@@ -363,3 +363,70 @@ sources:
     let result = unified_search_mcp::config::load(path.to_str().unwrap());
     assert!(result.is_ok(), "Should accept https:// base_url, got: {:?}", result.err());
 }
+
+// ============================================================================
+// 13. concurrent_config_loads_dont_interfere
+// ============================================================================
+#[test]
+fn concurrent_config_loads_dont_interfere() {
+    use std::io::Write;
+    use std::sync::Arc;
+    use std::thread;
+
+    // Config A: slack enabled with a missing env var (CONCURRENT_TEST_VAR_A not set)
+    let yaml_a = r#"
+sources:
+  slack:
+    enabled: true
+    user_token: "${CONCURRENT_TEST_VAR_A}"
+"#;
+
+    // Config B: local_text only, no missing env vars at all
+    let yaml_b = r#"
+sources:
+  local_text:
+    enabled: true
+    paths: ["/tmp/concurrent-test-b"]
+"#;
+
+    // Make sure the missing var is definitely absent
+    std::env::remove_var("CONCURRENT_TEST_VAR_A");
+
+    let mut tmp_a = NamedTempFile::new().unwrap();
+    write!(tmp_a, "{}", yaml_a).unwrap();
+    let mut tmp_b = NamedTempFile::new().unwrap();
+    write!(tmp_b, "{}", yaml_b).unwrap();
+
+    let path_a = Arc::new(tmp_a.path().to_str().unwrap().to_string());
+    let path_b = Arc::new(tmp_b.path().to_str().unwrap().to_string());
+
+    // Run many concurrent pairs of loads to surface any race condition
+    let handles: Vec<_> = (0..16).map(|i| {
+        let pa = Arc::clone(&path_a);
+        let pb = Arc::clone(&path_b);
+        thread::spawn(move || {
+            if i % 2 == 0 {
+                // Config A should fail (missing env var for enabled slack)
+                let result_a = config::load(&pa);
+                assert!(
+                    result_a.is_err(),
+                    "thread {}: config A (missing slack token) should fail, got Ok",
+                    i
+                );
+            } else {
+                // Config B should succeed and must NOT see config A's missing vars
+                let result_b = config::load(&pb);
+                assert!(
+                    result_b.is_ok(),
+                    "thread {}: config B (local_text only) should succeed, got: {:?}",
+                    i,
+                    result_b.err()
+                );
+            }
+        })
+    }).collect();
+
+    for h in handles {
+        h.join().expect("thread panicked");
+    }
+}

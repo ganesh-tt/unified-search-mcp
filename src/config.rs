@@ -228,11 +228,8 @@ pub fn load(path: &str) -> Result<AppConfig, SearchError> {
         ))
     })?;
 
-    // Clear any stale missing vars from previous calls (important for tests)
-    MISSING_ENV_VARS.lock().unwrap().clear();
-
-    // Interpolate env vars: ${VAR_NAME} -> value
-    let interpolated = interpolate_env_vars(&content)?;
+    // Interpolate env vars: ${VAR_NAME} -> value; collect missing var names locally
+    let (interpolated, missing_vars) = interpolate_env_vars(&content)?;
 
     // Parse YAML
     let raw: RawConfig = serde_yml::from_str(&interpolated).map_err(|e| {
@@ -253,7 +250,7 @@ pub fn load(path: &str) -> Result<AppConfig, SearchError> {
     };
 
     let sources = match raw.sources {
-        Some(raw_sources) => build_sources(raw_sources)?,
+        Some(raw_sources) => build_sources(raw_sources, &missing_vars)?,
         None => SourcesConfig::default(),
     };
 
@@ -261,10 +258,12 @@ pub fn load(path: &str) -> Result<AppConfig, SearchError> {
 }
 
 /// Replace `${VAR_NAME}` patterns with the corresponding environment variable
-/// value. Missing env vars are replaced with an empty string and recorded — the
-/// caller validates required fields later (only for enabled sources). This
-/// avoids erroring on disabled sources whose env vars aren't set.
-fn interpolate_env_vars(input: &str) -> Result<String, SearchError> {
+/// value. Returns the interpolated string and a list of variable names that
+/// were referenced but not set in the environment. Missing vars are replaced
+/// with an empty string; the caller validates required fields later (only for
+/// enabled sources), which avoids erroring on disabled sources whose env vars
+/// aren't set.
+fn interpolate_env_vars(input: &str) -> Result<(String, Vec<String>), SearchError> {
     let re = Regex::new(r"\$\{([^}]+)\}").expect("env var regex should compile");
     let mut result = input.to_string();
     let mut missing: Vec<String> = Vec::new();
@@ -291,17 +290,8 @@ fn interpolate_env_vars(input: &str) -> Result<String, SearchError> {
         }
     }
 
-    // Store missing var names so validation can check them per enabled source
-    if !missing.is_empty() {
-        MISSING_ENV_VARS.lock().unwrap().extend(missing);
-    }
-
-    Ok(result)
+    Ok((result, missing))
 }
-
-use std::sync::Mutex;
-static MISSING_ENV_VARS: std::sync::LazyLock<Mutex<Vec<String>>> =
-    std::sync::LazyLock::new(|| Mutex::new(Vec::new()));
 
 /// Expand tilde in a path string using shellexpand.
 fn expand_tilde(path: &str) -> String {
@@ -309,7 +299,7 @@ fn expand_tilde(path: &str) -> String {
 }
 
 /// Build the SourcesConfig from the raw deserialized data.
-fn build_sources(raw: RawSourcesConfig) -> Result<SourcesConfig, SearchError> {
+fn build_sources(raw: RawSourcesConfig, missing_vars: &[String]) -> Result<SourcesConfig, SearchError> {
     let slack = raw.slack.map(|s| {
         SlackSourceConfig {
             enabled: s.enabled,
@@ -391,7 +381,7 @@ fn build_sources(raw: RawSourcesConfig) -> Result<SourcesConfig, SearchError> {
     };
 
     // Validate: enabled sources must have required fields (non-empty after env var interpolation)
-    validate_enabled_sources(&config)?;
+    validate_enabled_sources(&config, missing_vars)?;
 
     Ok(config)
 }
@@ -413,7 +403,7 @@ fn validate_url_security(url: &str, source_name: &str) -> Result<(), SearchError
     Ok(())
 }
 
-fn validate_enabled_sources(sources: &SourcesConfig) -> Result<(), SearchError> {
+fn validate_enabled_sources(sources: &SourcesConfig, missing: &[String]) -> Result<(), SearchError> {
     // Validate HTTPS for enabled sources with base_url fields
     if let Some(jira) = &sources.jira {
         if jira.enabled {
@@ -430,8 +420,6 @@ fn validate_enabled_sources(sources: &SourcesConfig) -> Result<(), SearchError> 
             validate_url_security(&slack.config.base_url, "slack")?;
         }
     }
-
-    let missing = MISSING_ENV_VARS.lock().unwrap();
 
     if missing.is_empty() {
         return Ok(());

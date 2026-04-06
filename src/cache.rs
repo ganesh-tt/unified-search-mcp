@@ -20,15 +20,15 @@ impl ResponseCache {
         Self { entries: HashMap::new(), max_entries, ttl }
     }
 
-    fn make_key(query: &str, sources: &[&str]) -> String {
+    fn make_key(query: &str, sources: &[&str], max_results: usize) -> String {
         let normalized = query.trim().to_lowercase();
         let mut sorted: Vec<&str> = sources.to_vec();
         sorted.sort();
-        format!("{}|{}", normalized, sorted.join(","))
+        format!("{}|{}|{}", normalized, sorted.join(","), max_results)
     }
 
-    pub fn get(&mut self, query: &str, sources: &[&str]) -> Option<UnifiedSearchResponse> {
-        let key = Self::make_key(query, sources);
+    pub fn get(&mut self, query: &str, sources: &[&str], max_results: usize) -> Option<UnifiedSearchResponse> {
+        let key = Self::make_key(query, sources, max_results);
         let expired = self.entries.get(&key).map_or(false, |e| {
             self.ttl.is_zero() || e.created_at.elapsed() > self.ttl
         });
@@ -46,11 +46,11 @@ impl ResponseCache {
         }
     }
 
-    pub fn put(&mut self, query: &str, sources: &[&str], response: UnifiedSearchResponse) {
+    pub fn put(&mut self, query: &str, sources: &[&str], max_results: usize, response: UnifiedSearchResponse) {
         if self.ttl.is_zero() {
             return;
         }
-        let key = Self::make_key(query, sources);
+        let key = Self::make_key(query, sources, max_results);
         if self.entries.len() >= self.max_entries && !self.entries.contains_key(&key) {
             self.evict_oldest();
         }

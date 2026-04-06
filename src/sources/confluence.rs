@@ -232,44 +232,6 @@ impl ConfluenceSource {
         self.html_tag_re.replace_all(html, "").to_string()
     }
 
-    /// Build the Basic Auth header value.
-    fn auth_header(&self) -> String {
-        let credentials = format!("{}:{}", self.config.email, self.config.api_token);
-        let encoded = base64_encode_simple(&credentials);
-        format!("Basic {}", encoded)
-    }
-}
-
-/// Simple base64 encoding without external dependency.
-fn base64_encode_simple(input: &str) -> String {
-    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let bytes = input.as_bytes();
-    let mut result = String::new();
-
-    for chunk in bytes.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
-        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
-
-        let triple = (b0 << 16) | (b1 << 8) | b2;
-
-        result.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
-        result.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
-
-        if chunk.len() > 1 {
-            result.push(CHARS[((triple >> 6) & 0x3F) as usize] as char);
-        } else {
-            result.push('=');
-        }
-
-        if chunk.len() > 2 {
-            result.push(CHARS[(triple & 0x3F) as usize] as char);
-        } else {
-            result.push('=');
-        }
-    }
-
-    result
 }
 
 // Confluence API response types (v1)
@@ -327,7 +289,7 @@ impl SearchSource for ConfluenceSource {
         let result = self
             .client
             .get(&url)
-            .header("Authorization", self.auth_header())
+            .basic_auth(&self.config.email, Some(&self.config.api_token))
             .query(&[("limit", "1")])
             .send()
             .await;
@@ -363,7 +325,7 @@ impl SearchSource for ConfluenceSource {
         let response = self
             .client
             .get(&url)
-            .header("Authorization", self.auth_header())
+            .basic_auth(&self.config.email, Some(&self.config.api_token))
             .query(&[
                 ("cql", cql.as_str()),
                 ("limit", &self.config.max_results.to_string()),
@@ -520,7 +482,7 @@ impl ConfluenceSource {
         let response = self
             .client
             .get(&url)
-            .header("Authorization", self.auth_header())
+            .basic_auth(&self.config.email, Some(&self.config.api_token))
             .query(&[(
                 "expand",
                 "body.storage,version,children.page,children.comment.body.storage,metadata.labels,space",
@@ -714,7 +676,8 @@ impl ConfluenceSource {
 
         let client = self.client.clone();
         let base_url = self.config.base_url.clone();
-        let auth = self.auth_header();
+        let email = self.config.email.clone();
+        let token = self.config.api_token.clone();
 
         // Build futures for each result
         let futures: Vec<_> = results
@@ -723,7 +686,8 @@ impl ConfluenceSource {
                 let page_id = r.metadata.get("page_id").cloned();
                 let client = client.clone();
                 let base_url = base_url.clone();
-                let auth = auth.clone();
+                let email = email.clone();
+                let token = token.clone();
 
                 async move {
                     let id = match page_id {
@@ -738,7 +702,7 @@ impl ConfluenceSource {
 
                     let resp = client
                         .get(&url)
-                        .header("Authorization", auth)
+                        .basic_auth(&email, Some(&token))
                         .query(&[("expand", "body.storage,version"), ("limit", "25")])
                         .send()
                         .await;

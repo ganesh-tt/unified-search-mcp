@@ -92,5 +92,12 @@ fn write_entry(path: &PathBuf, entry: &MetricsEntry) -> std::io::Result<()> {
         .open(path)?;
 
     writeln!(file, "{}", line)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    }
+
     Ok(())
 }

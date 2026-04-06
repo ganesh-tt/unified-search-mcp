@@ -1,5 +1,7 @@
 # unified-search-mcp
 
+[![CI](https://github.com/ganesh-tt/unified-search-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/ganesh-tt/unified-search-mcp/actions/workflows/ci.yml)
+
 A lightweight Rust MCP server that searches Slack, Confluence, JIRA, and local files in parallel from a single tool call.
 
 ## Why
@@ -77,7 +79,7 @@ brew install ripgrep   # macOS
 ## Quick Start
 
 ```bash
-git clone https://github.com/your-org/unified-search-mcp.git
+git clone https://github.com/ganesh-tt/unified-search-mcp.git
 cd unified-search-mcp
 cargo build --release
 ```

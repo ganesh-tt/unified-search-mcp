@@ -17,6 +17,26 @@ async fn main() {
     let args: Vec<String> = env::args().collect();
     let verify = args.iter().any(|a| a == "--verify");
 
+    let help = args.iter().any(|a| a == "--help" || a == "-h");
+    if help {
+        eprintln!("unified-search-mcp v{}", env!("CARGO_PKG_VERSION"));
+        eprintln!();
+        eprintln!("A unified MCP search server for Slack, Confluence, JIRA, GitHub, and local files.");
+        eprintln!();
+        eprintln!("USAGE:");
+        eprintln!("  unified-search-mcp [OPTIONS]");
+        eprintln!();
+        eprintln!("OPTIONS:");
+        eprintln!("  --config <PATH>    Config file path (default: config.yaml)");
+        eprintln!("  --verify           Run preflight checks and exit");
+        eprintln!("  --stats            Show adoption report and exit");
+        eprintln!("  --days <N>         Days to include in stats (default: 7, use with --stats)");
+        eprintln!("  --help, -h         Show this help message");
+        eprintln!();
+        eprintln!("Without flags, starts the MCP server on stdio.");
+        std::process::exit(0);
+    }
+
     let stats = args.iter().any(|a| a == "--stats");
     let stats_days = args
         .iter()

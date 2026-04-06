@@ -56,14 +56,11 @@ pub struct SearchSourceParams {
 /// Parameters for the `get_detail` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetDetailParams {
-    /// The identifier: JIRA key (FIN-1234), URL, or Confluence page title
+    /// The identifier: JIRA key (FIN-1234), JIRA/Confluence/Slack/GitHub URL
     pub identifier: String,
-    /// Optional: force source type ('jira', 'confluence', 'slack'). If omitted, auto-detected.
+    /// Optional: force source type ('jira', 'confluence', 'slack', 'github'). If omitted, auto-detected.
     #[serde(default)]
     pub source: Option<String>,
-    /// Optional: max comments to return (default: all)
-    #[serde(default)]
-    pub max_comments: Option<usize>,
 }
 
 // ---------------------------------------------------------------------------
@@ -120,20 +117,14 @@ impl McpServer {
         self.server.handle_list_sources().await
     }
 
-    /// Index local files for vector search (not yet available).
-    #[tool(description = "Index local files for vector search (not yet available).")]
-    async fn index_local(&self) -> String {
-        self.server.handle_index_local().await
-    }
-
     /// Fetch full details for a specific item found via search.
-    #[tool(description = "Fetch full details for a specific JIRA ticket, Confluence page, Slack thread, or GitHub PR/issue. Accepts a JIRA key (FIN-1234), a JIRA/Confluence/Slack/GitHub URL, or a Confluence page title. GitHub PR URLs (github.com/org/repo/pull/N) and issue URLs (github.com/org/repo/issues/N) are auto-detected; use source='github' with 'repo#N' shorthand. Returns full content: description, all comments, reviews, linked issues, subtasks, child pages, or thread replies depending on source.")]
+    #[tool(description = "Fetch full details for a specific JIRA ticket, Confluence page, Slack thread, or GitHub PR/issue. Accepts a JIRA key (FIN-1234), a JIRA/Confluence/Slack/GitHub URL. GitHub PR URLs (github.com/org/repo/pull/N) and issue URLs (github.com/org/repo/issues/N) are auto-detected; use source='github' with 'repo#N' shorthand. Returns full content: description, all comments, reviews, linked issues, subtasks, child pages, or thread replies depending on source.")]
     async fn get_detail(
         &self,
         Parameters(params): Parameters<GetDetailParams>,
     ) -> String {
         self.server
-            .handle_get_detail(params.identifier, params.source, params.max_comments)
+            .handle_get_detail(params.identifier, params.source)
             .await
     }
 }

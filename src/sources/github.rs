@@ -131,6 +131,14 @@ impl GitHubSource {
         repo: &str,
         number: u64,
     ) -> Result<String, SearchError> {
+        let valid_name = regex::Regex::new(r"^[a-zA-Z0-9._-]+$").unwrap();
+        if !valid_name.is_match(owner) || !valid_name.is_match(repo) {
+            return Err(SearchError::Source {
+                source_name: "github".to_string(),
+                message: format!("Invalid GitHub owner '{}' or repo '{}'", owner, repo),
+            });
+        }
+
         // Fetch all three endpoints in parallel
         let pr_path = format!("repos/{}/{}/pulls/{}", owner, repo, number);
         let reviews_path = format!("repos/{}/{}/pulls/{}/reviews", owner, repo, number);
@@ -270,6 +278,14 @@ impl GitHubSource {
         repo: &str,
         number: u64,
     ) -> Result<String, SearchError> {
+        let valid_name = regex::Regex::new(r"^[a-zA-Z0-9._-]+$").unwrap();
+        if !valid_name.is_match(owner) || !valid_name.is_match(repo) {
+            return Err(SearchError::Source {
+                source_name: "github".to_string(),
+                message: format!("Invalid GitHub owner '{}' or repo '{}'", owner, repo),
+            });
+        }
+
         let issue_path = format!("repos/{}/{}/issues/{}", owner, repo, number);
         let comments_path = format!("repos/{}/{}/issues/{}/comments", owner, repo, number);
 
