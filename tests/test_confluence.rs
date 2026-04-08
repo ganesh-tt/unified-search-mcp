@@ -548,34 +548,21 @@ async fn time_filter_before() {
 // 17. search_enriches_with_comments
 // ===========================================================================
 
-/// Search results are enriched with comments fetched in parallel.
-/// Page IDs from search_success.json: 12345, 12346, 12347.
-/// Verifies comment_count metadata and that comment text appears in snippets.
+/// Comment enrichment is skipped during search (moved to get_detail only).
+/// Verifies that search results do NOT contain comment_count metadata or
+/// comment text in snippets — this avoids 20+ extra HTTP calls per search.
 #[tokio::test]
-async fn search_enriches_with_comments() {
+async fn search_does_not_enrich_comments() {
     let server = MockServer::start().await;
 
     let search_body = include_str!("../fixtures/confluence/search_success.json");
-    let comments_body = include_str!("../fixtures/confluence/page_comments.json");
 
-    // Mount search endpoint
+    // Mount only the search endpoint — no comment endpoints needed
     Mock::given(method("GET"))
         .and(path("/wiki/rest/api/search"))
         .respond_with(ResponseTemplate::new(200).set_body_raw(search_body, "application/json"))
         .mount(&server)
         .await;
-
-    // Mount comment endpoints for each page ID in search_success.json
-    for page_id in &["12345", "12346", "12347"] {
-        let comment_path = format!("/wiki/rest/api/content/{}/child/comment", page_id);
-        Mock::given(method("GET"))
-            .and(path(comment_path))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_raw(comments_body, "application/json"),
-            )
-            .mount(&server)
-            .await;
-    }
 
     let config = default_config(&server.uri());
     let source = ConfluenceSource::new(config);
@@ -583,23 +570,20 @@ async fn search_enriches_with_comments() {
 
     assert_eq!(results.len(), 3);
 
-    // All results should have comment_count = "2"
+    // No comment_count metadata — enrichment is skipped
     for result in &results {
-        let count = result.metadata.get("comment_count").expect("comment_count should be set");
-        assert_eq!(count, "2", "comment_count should be 2, got {}", count);
+        assert!(
+            result.metadata.get("comment_count").is_none(),
+            "comment_count should NOT be set during search, got: {:?}",
+            result.metadata.get("comment_count"),
+        );
     }
 
-    // Comments should appear in the snippet (HTML stripped)
+    // Snippets should not contain comment authors
     for result in &results {
         assert!(
-            result.snippet.contains("Bob Smith") || result.snippet.contains("Alice Chen"),
-            "Snippet should contain comment author, got: {}",
-            result.snippet
-        );
-        // HTML should be stripped from comment body
-        assert!(
-            !result.snippet.contains("<p>") && !result.snippet.contains("<b>"),
-            "Comment HTML should be stripped from snippet, got: {}",
+            !result.snippet.contains("Bob Smith") && !result.snippet.contains("Alice Chen"),
+            "Snippet should NOT contain comment authors during search, got: {}",
             result.snippet
         );
     }
@@ -824,10 +808,10 @@ async fn cql_escapes_space_names_with_quotes() {
 // 18. search_comment_failure_degrades_gracefully
 // ===========================================================================
 
-/// When comment fetch fails (no mock endpoint), results still return
-/// with comment_count=0 — no error surfaced to the caller.
+/// With comment enrichment removed from search, this test verifies search
+/// works fine without any comment endpoints mounted (regression guard).
 #[tokio::test]
-async fn search_comment_failure_degrades_gracefully() {
+async fn search_succeeds_without_comment_endpoints() {
     let server = MockServer::start().await;
 
     let search_body = include_str!("../fixtures/confluence/search_success.json");
@@ -843,12 +827,6 @@ async fn search_comment_failure_degrades_gracefully() {
     let source = ConfluenceSource::new(config);
     let results = source.search(&default_query("broadcast threshold")).await.unwrap();
 
-    // Search should succeed even if comments fail
+    // Search should succeed — no comment fetch attempted
     assert_eq!(results.len(), 3);
-
-    // comment_count should default to "0" when fetch fails
-    for result in &results {
-        let count = result.metadata.get("comment_count").expect("comment_count should be set");
-        assert_eq!(count, "0", "comment_count should be 0 on failure, got {}", count);
-    }
 }

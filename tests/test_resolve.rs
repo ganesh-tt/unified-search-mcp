@@ -31,6 +31,45 @@ fn detects_confluence_url() {
     }
 }
 
+/// Confluence URLs without /wiki/ prefix (seen in production metrics 2026-04-08).
+#[test]
+fn detects_confluence_url_without_wiki_prefix() {
+    let (source_type, parsed) =
+        detect_source("https://tookitaki.atlassian.net/spaces/AMLS/pages/3129704595/FIN-10071+QA+Test+Coverage+Matrix")
+            .expect("Should detect Confluence URL without /wiki/");
+    assert!(matches!(source_type, SourceType::Confluence));
+    match parsed {
+        ParsedIdentifier::ConfluencePageId(id) => assert_eq!(id, "3129704595"),
+        other => panic!("Expected ConfluencePageId, got {:?}", other),
+    }
+}
+
+/// Confluence v1 REST API URL.
+#[test]
+fn detects_confluence_v1_rest_url() {
+    let (source_type, parsed) =
+        detect_source("https://tookitaki.atlassian.net/wiki/rest/api/content/123456")
+            .expect("Should detect Confluence v1 REST URL");
+    assert!(matches!(source_type, SourceType::Confluence));
+    match parsed {
+        ParsedIdentifier::ConfluencePageId(id) => assert_eq!(id, "123456"),
+        other => panic!("Expected ConfluencePageId, got {:?}", other),
+    }
+}
+
+/// Confluence v2 API URL.
+#[test]
+fn detects_confluence_v2_api_url() {
+    let (source_type, parsed) =
+        detect_source("https://tookitaki.atlassian.net/wiki/api/v2/pages/789012")
+            .expect("Should detect Confluence v2 API URL");
+    assert!(matches!(source_type, SourceType::Confluence));
+    match parsed {
+        ParsedIdentifier::ConfluencePageId(id) => assert_eq!(id, "789012"),
+        other => panic!("Expected ConfluencePageId, got {:?}", other),
+    }
+}
+
 #[test]
 fn detects_slack_permalink() {
     let (source_type, parsed) =

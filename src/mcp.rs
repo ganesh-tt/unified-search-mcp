@@ -53,6 +53,16 @@ pub struct SearchSourceParams {
     pub no_cache: Option<bool>,
 }
 
+/// Parameters for enriched search tools (confluence_comments, jira_comments, slack_threads).
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct EnrichedSearchParams {
+    /// The search query text
+    pub query: String,
+    /// Optional: maximum results to return (default 10, lower than unified_search since each result triggers extra API calls)
+    #[serde(default)]
+    pub max_results: Option<usize>,
+}
+
 /// Parameters for the `get_detail` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetDetailParams {
@@ -108,6 +118,39 @@ impl McpServer {
     ) -> String {
         self.server
             .handle_search_source(params.source, params.query, params.max_results, params.no_cache.unwrap_or(false))
+            .await
+    }
+
+    /// Search Confluence with comment previews included in each result.
+    #[tool(description = "Search Confluence pages AND include comment previews in each result. Slower than unified_search (extra API calls per result) but shows the latest 3 comments per page. Use when you need to see discussion context without calling get_detail on every result. Default max_results=10.")]
+    async fn search_confluence_comments(
+        &self,
+        Parameters(params): Parameters<EnrichedSearchParams>,
+    ) -> String {
+        self.server
+            .handle_search_confluence_comments(params.query, params.max_results)
+            .await
+    }
+
+    /// Search JIRA and fetch ALL comments for each matching ticket.
+    #[tool(description = "Search JIRA tickets AND fetch the full comment history for each result. Regular JIRA search only returns a few comments; this fetches ALL comments per ticket. Use when searching for something that might be discussed in JIRA comments rather than in ticket descriptions. Default max_results=10.")]
+    async fn search_jira_comments(
+        &self,
+        Parameters(params): Parameters<EnrichedSearchParams>,
+    ) -> String {
+        self.server
+            .handle_search_jira_comments(params.query, params.max_results)
+            .await
+    }
+
+    /// Search Slack and fetch full threads for each matching message.
+    #[tool(description = "Search Slack messages AND fetch the full conversation thread for each result. Regular Slack search returns single messages; this fetches the entire thread including all replies. Use when you need the full discussion context, not just the matching message. Default max_results=10.")]
+    async fn search_slack_threads(
+        &self,
+        Parameters(params): Parameters<EnrichedSearchParams>,
+    ) -> String {
+        self.server
+            .handle_search_slack_threads(params.query, params.max_results)
             .await
     }
 

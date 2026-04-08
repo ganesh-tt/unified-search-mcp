@@ -77,8 +77,23 @@ impl LocalTextSource {
         match self.search_with_ripgrep(&escaped_query, &valid_paths, query).await {
             Ok(results) => Ok(results),
             Err(_) => {
-                // Ripgrep not available — use fallback.
-                self.search_with_fallback(&escaped_query, &valid_paths, query)
+                // Ripgrep not available — use sync fallback on blocking thread
+                // to avoid stalling the tokio async runtime.
+                let escaped = escaped_query.clone();
+                let owned_paths: Vec<std::path::PathBuf> = valid_paths.iter().map(|p| p.to_path_buf()).collect();
+                let query_clone = query.clone();
+                let config = self.config.clone();
+
+                tokio::task::spawn_blocking(move || {
+                    let source = LocalTextSource::new(config);
+                    let path_refs: Vec<&std::path::Path> = owned_paths.iter().map(|p| p.as_path()).collect();
+                    source.search_with_fallback(&escaped, &path_refs, &query_clone)
+                })
+                .await
+                .unwrap_or_else(|e| Err(SearchError::Source {
+                    source_name: "local_text".to_string(),
+                    message: format!("Fallback search task panicked: {e}"),
+                }))
             }
         }
     }

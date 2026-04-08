@@ -18,7 +18,6 @@ async fn logs_entry_to_jsonl() {
     };
 
     logger.log(entry).await;
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let content = std::fs::read_to_string(&path).unwrap();
     let lines: Vec<&str> = content.lines().collect();
@@ -50,7 +49,7 @@ async fn logs_multiple_entries() {
         logger.log(entry).await;
     }
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    // log() now awaits spawn_blocking — writes are sequential, no sleep needed
 
     let content = std::fs::read_to_string(&path).unwrap();
     let lines: Vec<&str> = content.lines().filter(|l| !l.is_empty()).collect();
@@ -74,7 +73,6 @@ async fn truncates_long_query_in_log() {
     };
 
     logger.log(entry).await;
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let content = std::fs::read_to_string(&path).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(content.lines().next().unwrap()).unwrap();

@@ -4,11 +4,33 @@ use std::time::Instant;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use regex::Regex;
-use reqwest::Client;
+use reqwest::{Client, Response};
 use serde::Deserialize;
 
 use crate::models::{HealthStatus, SearchError, SearchQuery, SearchResult, SourceHealth};
 use crate::sources::SearchSource;
+
+/// Warn threshold for response bodies (10 MB). Larger responses are still read
+/// (user needs complete data) but a warning is logged for monitoring.
+const LARGE_RESPONSE_WARN_BYTES: u64 = 10 * 1024 * 1024;
+
+/// Read a response body as text, logging a warning for very large responses.
+async fn read_body_checked(response: Response, source: &str) -> Result<String, SearchError> {
+    if let Some(len) = response.content_length() {
+        if len > LARGE_RESPONSE_WARN_BYTES {
+            tracing::warn!(
+                source = source,
+                content_length = len,
+                "Large response body ({:.1} MB) — may cause high memory usage",
+                len as f64 / (1024.0 * 1024.0),
+            );
+        }
+    }
+    response.text().await.map_err(|e| SearchError::Source {
+        source_name: source.to_string(),
+        message: format!("Failed to read response body: {}", e),
+    })
+}
 
 /// Configuration for the Confluence search source.
 #[derive(Clone)]
@@ -141,54 +163,26 @@ struct ConfluencePageLinks {
     base: Option<String>,
 }
 
-// Comment API response types
-#[derive(Debug, Deserialize)]
-struct ConfluenceCommentResponse {
-    results: Vec<ConfluenceComment>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ConfluenceComment {
-    body: Option<ConfluenceCommentBody>,
-    version: Option<ConfluenceCommentVersion>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ConfluenceCommentBody {
-    storage: Option<ConfluenceCommentStorage>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ConfluenceCommentStorage {
-    value: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ConfluenceCommentVersion {
-    by: Option<ConfluenceCommentAuthor>,
-    when: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ConfluenceCommentAuthor {
-    #[serde(rename = "displayName")]
-    display_name: Option<String>,
-}
 
 impl ConfluenceSource {
     pub fn new(config: ConfluenceConfig) -> Self {
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
-            .build()
-            .expect("Failed to build reqwest client");
+        let client = Self::build_client();
+        Self::new_with_client(config, client)
+    }
 
+    /// Create with a shared reqwest::Client (avoids duplicate connection pools).
+    pub fn new_with_client(config: ConfluenceConfig, client: Client) -> Self {
         let html_tag_re = Regex::new(r"<[^>]+>").expect("Invalid HTML tag regex");
+        Self { config, client, html_tag_re }
+    }
 
-        Self {
-            config,
-            client,
-            html_tag_re,
-        }
+    /// Build the default HTTP client for Confluence.
+    pub fn build_client() -> Client {
+        Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .build()
+            .expect("Failed to build reqwest client")
     }
 
     /// Build the CQL query string from the search query and config.
@@ -387,10 +381,7 @@ impl SearchSource for ConfluenceSource {
             });
         }
 
-        let body_text = response.text().await.map_err(|e| SearchError::Source {
-            source_name: "confluence".to_string(),
-            message: format!("Failed to read response body: {}", e),
-        })?;
+        let body_text = read_body_checked(response, "confluence").await?;
 
         let api_response: ConfluenceSearchResponse =
             serde_json::from_str(&body_text).map_err(|e| SearchError::Source {
@@ -461,7 +452,10 @@ impl SearchSource for ConfluenceSource {
             })
             .collect();
 
-        let results = self.enrich_with_comments(results).await;
+        // Comment enrichment skipped during search — it added 800ms-40s of
+        // latency (up to 20 extra HTTP calls) for data that `get_detail` already
+        // returns in full. The comment_count metadata field is left as "0"; callers
+        // should use `get_detail` for comment details.
         Ok(results)
     }
 }
@@ -469,6 +463,9 @@ impl SearchSource for ConfluenceSource {
 impl ConfluenceSource {
     /// Fetch full page details and return a formatted Markdown string.
     pub async fn get_detail_page(&self, page_id: &str) -> Result<String, SearchError> {
+        let page_start = std::time::Instant::now();
+        tracing::info!(page_id = %page_id, "confluence: get_detail_page starting");
+
         // Validate page_id is all digits to prevent path-traversal and URL injection.
         if page_id.is_empty() || !page_id.chars().all(|c| c.is_ascii_digit()) {
             return Err(SearchError::Source {
@@ -501,6 +498,12 @@ impl ConfluenceSource {
             })?;
 
         let status = response.status();
+        tracing::debug!(
+            page_id = %page_id,
+            status = status.as_u16(),
+            elapsed_ms = page_start.elapsed().as_millis() as u64,
+            "confluence: HTTP response received",
+        );
 
         if status.as_u16() == 401 {
             return Err(SearchError::Auth {
@@ -523,10 +526,14 @@ impl ConfluenceSource {
             });
         }
 
-        let body_text = response.text().await.map_err(|e| SearchError::Source {
-            source_name: "confluence".to_string(),
-            message: format!("Failed to read response body: {}", e),
-        })?;
+        let body_text = read_body_checked(response, "confluence").await?;
+
+        tracing::debug!(
+            page_id = %page_id,
+            body_bytes = body_text.len(),
+            elapsed_ms = page_start.elapsed().as_millis() as u64,
+            "confluence: response body read complete",
+        );
 
         let page: ConfluencePageDetail =
             serde_json::from_str(&body_text).map_err(|e| SearchError::Source {
@@ -665,21 +672,79 @@ impl ConfluenceSource {
             }
         }
 
+        tracing::info!(
+            page_id = %page_id,
+            elapsed_ms = page_start.elapsed().as_millis() as u64,
+            markdown_bytes = md.len(),
+            "confluence: get_detail_page complete",
+        );
         Ok(md)
     }
 }
 
+// ---------------------------------------------------------------------------
+// Comment-enriched search (separate path from default search)
+// ---------------------------------------------------------------------------
+
+// Comment API response types (used by search_with_comments)
+#[derive(Debug, Deserialize)]
+struct ConfluenceCommentResponse {
+    results: Vec<ConfluenceCommentResult>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluenceCommentResult {
+    body: Option<ConfluenceCommentBody>,
+    version: Option<ConfluenceCommentVersion>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluenceCommentBody {
+    storage: Option<ConfluenceCommentStorage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluenceCommentStorage {
+    value: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluenceCommentVersion {
+    by: Option<ConfluenceCommentAuthor>,
+    when: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfluenceCommentAuthor {
+    #[serde(rename = "displayName")]
+    display_name: Option<String>,
+}
+
 impl ConfluenceSource {
-    /// Fetch comments in parallel for each result that has a page_id in metadata.
-    async fn enrich_with_comments(&self, mut results: Vec<SearchResult>) -> Vec<SearchResult> {
-        use futures::future::join_all;
+    /// Search + enrich results with comment previews. This is a **separate path**
+    /// from the default `search()` (which skips enrichment for speed). Use this
+    /// when comment context matters and the caller is willing to wait.
+    ///
+    /// Bounded: max 5 concurrent comment fetches, 10s timeout per request.
+    pub async fn search_with_comments(
+        &self,
+        query: &SearchQuery,
+    ) -> Result<Vec<SearchResult>, SearchError> {
+        let mut results = self.search(query).await?;
+        self.enrich_with_comments(&mut results).await;
+        Ok(results)
+    }
+
+    /// Fetch comment previews for each result that has a `page_id` in metadata.
+    /// At most 5 requests run in parallel, each with a 10s timeout.
+    async fn enrich_with_comments(&self, results: &mut [SearchResult]) {
+        use futures::stream::{self, StreamExt};
 
         let client = self.client.clone();
         let base_url = self.config.base_url.clone();
         let email = self.config.email.clone();
         let token = self.config.api_token.clone();
 
-        // Build futures for each result
         let futures: Vec<_> = results
             .iter()
             .map(|r| {
@@ -700,27 +765,44 @@ impl ConfluenceSource {
                         base_url, id
                     );
 
-                    let resp = client
-                        .get(&url)
-                        .basic_auth(&email, Some(&token))
-                        .query(&[("expand", "body.storage,version"), ("limit", "25")])
-                        .send()
-                        .await;
+                    let page_id_for_log = id.clone();
+                    let fetch = async {
+                        let resp = client
+                            .get(&url)
+                            .basic_auth(&email, Some(&token))
+                            .query(&[("expand", "body.storage,version"), ("limit", "25")])
+                            .send()
+                            .await;
 
-                    match resp {
-                        Ok(r) if r.status().is_success() => {
-                            let text = r.text().await.ok()?;
-                            let parsed: ConfluenceCommentResponse =
-                                serde_json::from_str(&text).ok()?;
-                            Some(parsed.results)
+                        match resp {
+                            Ok(r) if r.status().is_success() => {
+                                let text = r.text().await.ok()?;
+                                let parsed: ConfluenceCommentResponse =
+                                    serde_json::from_str(&text).ok()?;
+                                Some(parsed.results)
+                            }
+                            _ => None,
                         }
-                        _ => None,
+                    };
+
+                    match tokio::time::timeout(std::time::Duration::from_secs(10), fetch).await {
+                        Ok(result) => result,
+                        Err(_) => {
+                            tracing::warn!(
+                                page_id = %page_id_for_log,
+                                "enrich_with_comments: timed out after 10s",
+                            );
+                            None
+                        }
                     }
                 }
             })
             .collect();
 
-        let comment_batches = join_all(futures).await;
+        let comment_batches: Vec<_> = stream::iter(futures)
+            .buffered(5)
+            .collect()
+            .await;
 
         for (result, comments_opt) in results.iter_mut().zip(comment_batches.into_iter()) {
             match comments_opt {
@@ -734,7 +816,6 @@ impl ConfluenceSource {
                         let mut snippet_addition =
                             format!("\n---\nComments ({} total):", count);
 
-                        // Latest 3 comments (reversed = most recent first)
                         for comment in comments.iter().rev().take(3) {
                             let author = comment
                                 .version
@@ -747,9 +828,7 @@ impl ConfluenceSource {
                                 .version
                                 .as_ref()
                                 .and_then(|v| v.when.as_deref())
-                                .and_then(|w| {
-                                    chrono::DateTime::parse_from_rfc3339(w).ok()
-                                })
+                                .and_then(|w| chrono::DateTime::parse_from_rfc3339(w).ok())
                                 .map(|dt| dt.format("%Y-%m-%d").to_string())
                                 .unwrap_or_default();
 
@@ -784,7 +863,5 @@ impl ConfluenceSource {
                 }
             }
         }
-
-        results
     }
 }

@@ -59,11 +59,20 @@ pub struct SlackSource {
 
 impl SlackSource {
     pub fn new(config: SlackConfig) -> Self {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(10))
-            .build()
-            .expect("Failed to build HTTP client");
+        let client = Self::build_client();
+        Self::new_with_client(config, client)
+    }
+
+    pub fn new_with_client(config: SlackConfig, client: Client) -> Self {
         Self { config, client }
+    }
+
+    pub fn build_client() -> Client {
+        Client::builder()
+            .timeout(Duration::from_secs(15))
+            .connect_timeout(Duration::from_secs(5))
+            .build()
+            .expect("Failed to build HTTP client")
     }
 
     /// Fetch a full Slack thread and format it as Markdown.
@@ -79,50 +88,52 @@ impl SlackSource {
         channel: &str,
         ts: &str,
     ) -> Result<String, SearchError> {
-        // --- 1. Fetch channel info ---
-        let info_url = format!("{}/api/conversations.info", self.config.base_url);
-        let info_resp = self
-            .client
-            .get(&info_url)
-            .header(
-                "Authorization",
-                format!("Bearer {}", self.config.user_token),
-            )
-            .query(&[("channel", channel)])
-            .send()
-            .await
-            .map_err(SearchError::Http)?;
+        let thread_start = std::time::Instant::now();
+        tracing::info!(channel = %channel, ts = %ts, "slack: get_detail_thread starting");
 
-        let info_body: SlackConversationInfoResponse =
-            info_resp.json().await.map_err(|e| SearchError::Source {
+        // --- 1 & 2. Fetch channel info and thread replies in parallel ---
+        let info_url = format!("{}/api/conversations.info", self.config.base_url);
+        let replies_url = format!("{}/api/conversations.replies", self.config.base_url);
+
+        let info_future = async {
+            let resp = self
+                .client
+                .get(&info_url)
+                .header("Authorization", format!("Bearer {}", self.config.user_token))
+                .query(&[("channel", channel)])
+                .send()
+                .await
+                .map_err(SearchError::Http)?;
+            resp.json::<SlackConversationInfoResponse>().await.map_err(|e| SearchError::Source {
                 source_name: "slack".to_string(),
                 message: format!("Failed to parse conversations.info response: {e}"),
-            })?;
+            })
+        };
 
-        let channel_name = info_body
-            .channel
+        let replies_future = async {
+            let resp = self
+                .client
+                .get(&replies_url)
+                .header("Authorization", format!("Bearer {}", self.config.user_token))
+                .query(&[("channel", channel), ("ts", ts), ("limit", "200")])
+                .send()
+                .await
+                .map_err(SearchError::Http)?;
+            resp.json::<SlackConversationResponse>().await.map_err(|e| SearchError::Source {
+                source_name: "slack".to_string(),
+                message: format!("Failed to parse conversations.replies response: {e}"),
+            })
+        };
+
+        let (info_result, replies_result) = tokio::join!(info_future, replies_future);
+
+        let channel_name = info_result
+            .ok()
+            .and_then(|body| body.channel)
             .and_then(|c| c.name)
             .unwrap_or_else(|| channel.to_string());
 
-        // --- 2. Fetch thread replies ---
-        let replies_url = format!("{}/api/conversations.replies", self.config.base_url);
-        let replies_resp = self
-            .client
-            .get(&replies_url)
-            .header(
-                "Authorization",
-                format!("Bearer {}", self.config.user_token),
-            )
-            .query(&[("channel", channel), ("ts", ts), ("limit", "200")])
-            .send()
-            .await
-            .map_err(SearchError::Http)?;
-
-        let replies_body: SlackConversationResponse =
-            replies_resp.json().await.map_err(|e| SearchError::Source {
-                source_name: "slack".to_string(),
-                message: format!("Failed to parse conversations.replies response: {e}"),
-            })?;
+        let replies_body = replies_result?;
 
         if !replies_body.ok {
             return Err(SearchError::Source {
@@ -192,6 +203,13 @@ impl SlackSource {
             md.push_str(&format!("- {p}\n"));
         }
 
+        tracing::info!(
+            channel = %channel,
+            ts = %ts,
+            elapsed_ms = thread_start.elapsed().as_millis() as u64,
+            reply_count = replies.len(),
+            "slack: get_detail_thread complete",
+        );
         Ok(md)
     }
 }
@@ -461,6 +479,77 @@ impl SearchSource for SlackSource {
             .collect();
 
         Ok(results)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Thread-enriched search (separate path)
+// ---------------------------------------------------------------------------
+
+impl SlackSource {
+    /// Search Slack then fetch the full thread for each matching message.
+    /// Regular search returns single messages; this calls `get_detail_thread`
+    /// per result to get the entire conversation. Bounded: max 5 concurrent, 15s each.
+    pub async fn search_with_threads(
+        &self,
+        query: &SearchQuery,
+    ) -> Result<Vec<(SearchResult, String)>, SearchError> {
+        let results = self.search(query).await?;
+
+        use futures::stream::{self, StreamExt};
+
+        let enriched: Vec<_> = stream::iter(results.into_iter().map(|r| {
+            // Extract channel and ts from the permalink URL
+            // Format: https://org.slack.com/archives/CXXXXXX/p1234567890123456
+            let permalink = r.url.clone().unwrap_or_default();
+            async move {
+                let parts: Vec<&str> = permalink.split('/').collect();
+                // Find "archives" then channel and ts
+                let (channel, ts) = if let Some(idx) = parts.iter().position(|&p| p == "archives") {
+                    if parts.len() > idx + 2 {
+                        let ch = parts[idx + 1];
+                        let raw_ts = parts[idx + 2];
+                        // Convert p1234567890123456 → 1234567890.123456
+                        if let Some(stripped) = raw_ts.strip_prefix('p') {
+                            if stripped.len() >= 10 {
+                                let ts = format!("{}.{}", &stripped[..10], &stripped[10..]);
+                                (ch.to_string(), ts)
+                            } else {
+                                return (r, String::new());
+                            }
+                        } else {
+                            return (r, String::new());
+                        }
+                    } else {
+                        return (r, String::new());
+                    }
+                } else {
+                    return (r, String::new());
+                };
+
+                match tokio::time::timeout(
+                    std::time::Duration::from_secs(15),
+                    self.get_detail_thread(&channel, &ts),
+                )
+                .await
+                {
+                    Ok(Ok(thread_md)) => (r, thread_md),
+                    Ok(Err(e)) => {
+                        tracing::warn!(channel = %channel, error = %e, "slack: thread enrichment failed");
+                        (r, String::new())
+                    }
+                    Err(_) => {
+                        tracing::warn!(channel = %channel, "slack: thread enrichment timed out (15s)");
+                        (r, String::new())
+                    }
+                }
+            }
+        }))
+        .buffered(5)
+        .collect()
+        .await;
+
+        Ok(enriched)
     }
 }
 

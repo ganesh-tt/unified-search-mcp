@@ -196,6 +196,10 @@ fn parse_attributes(s: &str, attrs: &mut Vec<(String, String)>) {
 }
 
 fn decode_entities(s: &str) -> String {
+    // Fast path: skip 7 String allocations when no entities present
+    if !s.contains('&') {
+        return s.to_string();
+    }
     s.replace("&amp;", "&")
         .replace("&lt;", "<")
         .replace("&gt;", ">")

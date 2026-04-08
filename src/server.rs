@@ -1,6 +1,8 @@
 use std::fmt::Write;
+use std::time::Duration;
 
 use serde_json;
+use tokio::time::timeout;
 
 use crate::core::SearchOrchestrator;
 use crate::metrics::{MetricsEntry, MetricsLogger};
@@ -10,6 +12,15 @@ use crate::sources::confluence::ConfluenceSource;
 use crate::sources::github::GitHubSource;
 use crate::sources::jira::JiraSource;
 use crate::sources::slack::SlackSource;
+
+/// Maximum time allowed for a single `get_detail` call before returning a
+/// timeout error to the MCP client. This prevents the MCP server from hanging
+/// indefinitely when an upstream API stalls.
+const GET_DETAIL_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Maximum time for enriched search tools (search + per-result API calls).
+/// Higher than get_detail since these do N requests sequentially in batches.
+const ENRICHED_SEARCH_TIMEOUT: Duration = Duration::from_secs(45);
 
 /// MCP server wrapping a [`SearchOrchestrator`].
 ///
@@ -270,6 +281,262 @@ impl UnifiedSearchServer {
     }
 
     // -----------------------------------------------------------------------
+    // Tool: search_confluence_comments
+    // -----------------------------------------------------------------------
+
+    /// Search Confluence and enrich each result with comment previews.
+    /// Slower than regular search (up to 20 extra HTTP calls) but includes
+    /// the latest 3 comments per page in the snippet.
+    pub async fn handle_search_confluence_comments(
+        &self,
+        query: String,
+        max_results: Option<usize>,
+    ) -> String {
+        let start = std::time::Instant::now();
+        let max = max_results.unwrap_or(10);
+
+        match timeout(ENRICHED_SEARCH_TIMEOUT, self.do_search_confluence_comments(query, max)).await {
+            Ok(result) => result,
+            Err(_) => format!(
+                "Error: search_confluence_comments timed out after {}s",
+                ENRICHED_SEARCH_TIMEOUT.as_secs(),
+            ),
+        }
+    }
+
+    async fn do_search_confluence_comments(&self, query: String, max: usize) -> String {
+        let start = std::time::Instant::now();
+        match &self.confluence_source {
+            Some(src) => {
+                let search_query = SearchQuery {
+                    text: query.clone(),
+                    max_results: max,
+                    filters: SearchFilters {
+                        sources: None,
+                        after: None,
+                        before: None,
+                    },
+                };
+
+                match src.search_with_comments(&search_query).await {
+                    Ok(results) => {
+                        let elapsed = start.elapsed().as_millis() as u64;
+
+                        // Emit metrics
+                        if let Some(ref metrics) = self.metrics {
+                            metrics
+                                .log(MetricsEntry::Search {
+                                    tool: "search_confluence_comments".to_string(),
+                                    query: query.clone(),
+                                    sources_queried: vec!["confluence".to_string()],
+                                    total_results: results.len(),
+                                    deduped_results: results.len(),
+                                    total_ms: elapsed,
+                                })
+                                .await;
+                        }
+
+                        // Build markdown table
+                        let mut md = String::new();
+                        let _ = writeln!(md, "| # | Title | Comments | Snippet | URL |");
+                        let _ = writeln!(md, "|---|-------|----------|---------|-----|");
+
+                        for (i, result) in results.iter().enumerate() {
+                            let comment_count = result
+                                .metadata
+                                .get("comment_count")
+                                .map(|s| s.as_str())
+                                .unwrap_or("0");
+                            let snippet = truncate_snippet(&result.snippet, 120);
+                            let url = result.url.as_deref().unwrap_or("-");
+                            let _ = writeln!(
+                                md,
+                                "| {} | {} | {} | {} | {} |",
+                                i + 1,
+                                result.title,
+                                comment_count,
+                                snippet,
+                                url,
+                            );
+                        }
+
+                        let _ = write!(
+                            md,
+                            "\n**Source**: confluence (with comments) | **Time**: {}ms | **Results**: {}",
+                            elapsed,
+                            results.len(),
+                        );
+
+                        md
+                    }
+                    Err(e) => format!("Error: {}", e),
+                }
+            }
+            None => "Error: Confluence source not configured".to_string(),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Tool: search_jira_comments
+    // -----------------------------------------------------------------------
+
+    /// Search JIRA and fetch full comment history for each result.
+    pub async fn handle_search_jira_comments(
+        &self,
+        query: String,
+        max_results: Option<usize>,
+    ) -> String {
+        match timeout(ENRICHED_SEARCH_TIMEOUT, self.do_search_jira_comments(query, max_results.unwrap_or(10))).await {
+            Ok(result) => result,
+            Err(_) => format!(
+                "Error: search_jira_comments timed out after {}s",
+                ENRICHED_SEARCH_TIMEOUT.as_secs(),
+            ),
+        }
+    }
+
+    async fn do_search_jira_comments(&self, query: String, max: usize) -> String {
+        let start = std::time::Instant::now();
+        match &self.jira_source {
+            Some(src) => {
+                let search_query = SearchQuery {
+                    text: query.clone(),
+                    max_results: max,
+                    filters: SearchFilters {
+                        sources: None,
+                        after: None,
+                        before: None,
+                    },
+                };
+
+                match src.search_with_full_comments(&search_query).await {
+                    Ok(enriched) => {
+                        let elapsed = start.elapsed().as_millis() as u64;
+
+                        if let Some(ref metrics) = self.metrics {
+                            metrics
+                                .log(MetricsEntry::Search {
+                                    tool: "search_jira_comments".to_string(),
+                                    query: query.clone(),
+                                    sources_queried: vec!["jira".to_string()],
+                                    total_results: enriched.len(),
+                                    deduped_results: enriched.len(),
+                                    total_ms: elapsed,
+                                })
+                                .await;
+                        }
+
+                        let mut md = String::new();
+                        for (i, (result, detail_md)) in enriched.iter().enumerate() {
+                            let url = result.url.as_deref().unwrap_or("-");
+                            let status = result.metadata.get("status").map(|s| s.as_str()).unwrap_or("?");
+                            let _ = writeln!(md, "## {}. {} [{}]", i + 1, result.title, status);
+                            let _ = writeln!(md, "URL: {}\n", url);
+
+                            if detail_md.is_empty() {
+                                let _ = writeln!(md, "{}\n", result.snippet);
+                            } else {
+                                let _ = writeln!(md, "{}\n", detail_md);
+                            }
+                        }
+
+                        let _ = write!(
+                            md,
+                            "---\n**Source**: jira (with full comments) | **Time**: {}ms | **Results**: {}",
+                            elapsed,
+                            enriched.len(),
+                        );
+
+                        md
+                    }
+                    Err(e) => format!("Error: {}", e),
+                }
+            }
+            None => "Error: JIRA source not configured".to_string(),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Tool: search_slack_threads
+    // -----------------------------------------------------------------------
+
+    /// Search Slack and fetch full threads for each matching message.
+    pub async fn handle_search_slack_threads(
+        &self,
+        query: String,
+        max_results: Option<usize>,
+    ) -> String {
+        match timeout(ENRICHED_SEARCH_TIMEOUT, self.do_search_slack_threads(query, max_results.unwrap_or(10))).await {
+            Ok(result) => result,
+            Err(_) => format!(
+                "Error: search_slack_threads timed out after {}s",
+                ENRICHED_SEARCH_TIMEOUT.as_secs(),
+            ),
+        }
+    }
+
+    async fn do_search_slack_threads(&self, query: String, max: usize) -> String {
+        let start = std::time::Instant::now();
+        match &self.slack_source {
+            Some(src) => {
+                let search_query = SearchQuery {
+                    text: query.clone(),
+                    max_results: max,
+                    filters: SearchFilters {
+                        sources: None,
+                        after: None,
+                        before: None,
+                    },
+                };
+
+                match src.search_with_threads(&search_query).await {
+                    Ok(enriched) => {
+                        let elapsed = start.elapsed().as_millis() as u64;
+
+                        if let Some(ref metrics) = self.metrics {
+                            metrics
+                                .log(MetricsEntry::Search {
+                                    tool: "search_slack_threads".to_string(),
+                                    query: query.clone(),
+                                    sources_queried: vec!["slack".to_string()],
+                                    total_results: enriched.len(),
+                                    deduped_results: enriched.len(),
+                                    total_ms: elapsed,
+                                })
+                                .await;
+                        }
+
+                        let mut md = String::new();
+                        for (i, (result, thread_md)) in enriched.iter().enumerate() {
+                            let url = result.url.as_deref().unwrap_or("-");
+                            let channel = result.metadata.get("channel").map(|s| s.as_str()).unwrap_or("?");
+                            let _ = writeln!(md, "## {}. #{} — {}", i + 1, channel, result.title);
+                            let _ = writeln!(md, "URL: {}\n", url);
+
+                            if thread_md.is_empty() {
+                                let _ = writeln!(md, "{}\n", result.snippet);
+                            } else {
+                                let _ = writeln!(md, "{}\n", thread_md);
+                            }
+                        }
+
+                        let _ = write!(
+                            md,
+                            "---\n**Source**: slack (with threads) | **Time**: {}ms | **Results**: {}",
+                            elapsed,
+                            enriched.len(),
+                        );
+
+                        md
+                    }
+                    Err(e) => format!("Error: {}", e),
+                }
+            }
+            None => "Error: Slack source not configured".to_string(),
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Tool: get_detail
     // -----------------------------------------------------------------------
 
@@ -319,8 +586,76 @@ impl UnifiedSearchServer {
             SourceType::GitHub => "github",
         };
 
-        // Execute the detail fetch; capture (result, error, comment_count)
-        let (result_text, error_text): (String, Option<String>) = match source_type {
+        // Execute the detail fetch with a safety-net timeout so the MCP tool
+        // call always returns, even if an upstream API stalls.
+        tracing::info!(
+            source = detected_source_name,
+            identifier = %identifier,
+            "get_detail: starting fetch (timeout={}s)",
+            GET_DETAIL_TIMEOUT.as_secs(),
+        );
+
+        let fetch_future = self.fetch_detail(source_type, parsed);
+        let (result_text, error_text): (String, Option<String>) =
+            match timeout(GET_DETAIL_TIMEOUT, fetch_future).await {
+                Ok(inner) => {
+                    let elapsed = start.elapsed();
+                    if inner.1.is_some() {
+                        tracing::warn!(
+                            source = detected_source_name,
+                            identifier = %identifier,
+                            elapsed_ms = elapsed.as_millis() as u64,
+                            "get_detail: completed with error",
+                        );
+                    } else {
+                        tracing::info!(
+                            source = detected_source_name,
+                            identifier = %identifier,
+                            elapsed_ms = elapsed.as_millis() as u64,
+                            result_bytes = inner.0.len(),
+                            "get_detail: completed OK",
+                        );
+                    }
+                    inner
+                }
+                Err(_) => {
+                    tracing::error!(
+                        source = detected_source_name,
+                        identifier = %identifier,
+                        timeout_secs = GET_DETAIL_TIMEOUT.as_secs(),
+                        "get_detail: TIMED OUT — upstream API did not respond",
+                    );
+                    let msg = format!(
+                        "Error: get_detail timed out after {}s for '{}' (source: {})",
+                        GET_DETAIL_TIMEOUT.as_secs(),
+                        identifier,
+                        detected_source_name,
+                    );
+                    (msg.clone(), Some(msg))
+                }
+            };
+
+        self.emit_detail_metrics(
+            &identifier,
+            detected_source_name,
+            source.as_deref(),
+            start,
+            0,
+            error_text.as_deref(),
+        )
+        .await;
+
+        result_text
+    }
+
+    /// Inner dispatch for `get_detail` — separated so it can be wrapped in a
+    /// `tokio::time::timeout` by the caller.
+    async fn fetch_detail(
+        &self,
+        source_type: SourceType,
+        parsed: ParsedIdentifier,
+    ) -> (String, Option<String>) {
+        match source_type {
             SourceType::Jira => {
                 let key = match parsed {
                     ParsedIdentifier::JiraKey(k) => Some(k),
@@ -422,20 +757,18 @@ impl UnifiedSearchServer {
                                 }
                             }
                             ParsedIdentifier::GitHubShorthand { repo, number } => {
-                                // Need to determine if it's a PR or issue -- try PR first, fall back to issue.
-                                // For shorthand, we need the org. Use the first org from config.
-                                // This is a limitation -- shorthand only works with single-org setups.
                                 let owner = src.default_org().unwrap_or_else(|| "unknown".to_string());
-                                match src.get_detail_pr(&owner, &repo, number).await {
-                                    Ok(md) => (md, None),
-                                    Err(_) => {
-                                        match src.get_detail_issue(&owner, &repo, number).await {
-                                            Ok(md) => (md, None),
-                                            Err(e) => {
-                                                let msg = format!("Error: {}", e);
-                                                (msg.clone(), Some(msg))
-                                            }
-                                        }
+                                // Race PR and Issue lookups in parallel — whichever
+                                // succeeds first wins. Avoids 10-30s wasted on the
+                                // wrong type in sequential fallback.
+                                let pr_fut = src.get_detail_pr(&owner, &repo, number);
+                                let issue_fut = src.get_detail_issue(&owner, &repo, number);
+                                tokio::select! {
+                                    Ok(md) = pr_fut => (md, None),
+                                    Ok(md) = issue_fut => (md, None),
+                                    else => {
+                                        let msg = format!("Error: could not find PR or issue {}/{}#{}", owner, repo, number);
+                                        (msg.clone(), Some(msg))
                                     }
                                 }
                             }
@@ -451,19 +784,7 @@ impl UnifiedSearchServer {
                     }
                 }
             }
-        };
-
-        self.emit_detail_metrics(
-            &identifier,
-            detected_source_name,
-            source.as_deref(),
-            start,
-            0,
-            error_text.as_deref(),
-        )
-        .await;
-
-        result_text
+        }
     }
 
     /// Helper to emit Detail metrics for get_detail calls.
@@ -507,23 +828,28 @@ fn truncate_snippet(snippet: &str, max_chars: usize) -> String {
 }
 
 /// Save full search results to `~/.unified-search/last-search-results.json`.
-/// Returns the path as a string (for display in the response).
+/// Returns the path immediately; the actual file write is offloaded to a
+/// blocking thread so it never stalls the tokio runtime.
 fn save_full_results(results: &[SearchResult]) -> String {
     let dir = shellexpand::tilde("~/.unified-search").to_string();
     let path = format!("{dir}/last-search-results.json");
 
-    // Best-effort: create dir and write file
-    let _ = std::fs::create_dir_all(&dir);
-    match serde_json::to_string_pretty(results) {
-        Ok(json) => {
-            let _ = std::fs::write(&path, json);
+    // Serialize in-place (CPU-only, fine on async runtime), then offload I/O
+    if let Ok(json) = serde_json::to_string_pretty(results) {
+        let write_path = path.clone();
+        let write_dir = dir;
+        tokio::task::spawn_blocking(move || {
+            let _ = std::fs::create_dir_all(&write_dir);
+            let _ = std::fs::write(&write_path, json);
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+                let _ = std::fs::set_permissions(
+                    &write_path,
+                    std::fs::Permissions::from_mode(0o600),
+                );
             }
-        }
-        Err(_) => {}
+        });
     }
 
     path

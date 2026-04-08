@@ -5,8 +5,15 @@ static JIRA_URL_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^https?://([^/]+\.atlassian\.net)/browse/([A-Z][A-Z0-9]+-\d+)$").unwrap()
 });
 
+// Matches all known Confluence page URL patterns:
+// - /wiki/spaces/SPACE/pages/12345/Title
+// - /spaces/SPACE/pages/12345/Title           (no /wiki/)
+// - /wiki/rest/api/content/12345              (v1 REST)
+// - /wiki/api/v2/pages/12345                  (v2 REST)
 static CONFLUENCE_URL_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^https?://[^/]+\.atlassian\.net/wiki/spaces/[^/]+/pages/(\d+)").unwrap()
+    Regex::new(
+        r"^https?://[^/]+\.atlassian\.net(?:/wiki)?(?:/spaces/[^/]+/pages/(\d+)|/rest/api/content/(\d+)|/api/v2/pages/(\d+))"
+    ).unwrap()
 });
 
 static SLACK_URL_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -64,10 +71,15 @@ pub fn detect_source(identifier: &str) -> Option<(SourceType, ParsedIdentifier)>
         return Some((SourceType::Jira, ParsedIdentifier::JiraUrl { base_url, key }));
     }
 
-    // Priority 2: Confluence URL
+    // Priority 2: Confluence URL (multiple patterns — first non-None group wins)
     if let Some(caps) = CONFLUENCE_URL_RE.captures(id) {
-        let page_id = caps[1].to_string();
-        return Some((SourceType::Confluence, ParsedIdentifier::ConfluencePageId(page_id)));
+        let page_id = caps.get(1)
+            .or_else(|| caps.get(2))
+            .or_else(|| caps.get(3))
+            .map(|m| m.as_str().to_string());
+        if let Some(pid) = page_id {
+            return Some((SourceType::Confluence, ParsedIdentifier::ConfluencePageId(pid)));
+        }
     }
 
     // Priority 3: Slack archive URL

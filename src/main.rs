@@ -14,6 +14,19 @@ use unified_search_mcp::sources::SearchSource;
 
 #[tokio::main]
 async fn main() {
+    // Init tracing to stderr (stdout = MCP JSON-RPC channel).
+    // Default: warn-level; override with RUST_LOG env var.
+    // Example: RUST_LOG=unified_search_mcp=info for get_detail timing logs.
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
+        )
+        .with_target(false)
+        .compact()
+        .init();
+
     let args: Vec<String> = env::args().collect();
     let verify = args.iter().any(|a| a == "--verify");
 
@@ -91,28 +104,41 @@ async fn main() {
         std::process::exit(if ok { 0 } else { 1 });
     }
 
-    // Build sources from config
+    // Build sources from config. HTTP clients are built once per source type
+    // and shared between the orchestrator (search) and detail (get_detail) paths
+    // to halve connection pool overhead and maximize HTTP keep-alive reuse.
     let mut sources: Vec<Box<dyn SearchSource>> = Vec::new();
     let mut source_weights: HashMap<String, f32> = HashMap::new();
 
+    // Build shared clients + detail instances
+    let mut slack_detail: Option<SlackSource> = None;
+    let mut confluence_detail: Option<ConfluenceSource> = None;
+    let mut jira_detail: Option<JiraSource> = None;
+
     if let Some(ref slack_cfg) = app_config.sources.slack {
         if slack_cfg.enabled {
+            let client = SlackSource::build_client();
             source_weights.insert("slack".to_string(), slack_cfg.weight);
-            sources.push(Box::new(SlackSource::new(slack_cfg.config.clone())));
+            sources.push(Box::new(SlackSource::new_with_client(slack_cfg.config.clone(), client.clone())));
+            slack_detail = Some(SlackSource::new_with_client(slack_cfg.config.clone(), client));
         }
     }
 
     if let Some(ref confluence_cfg) = app_config.sources.confluence {
         if confluence_cfg.enabled {
+            let client = ConfluenceSource::build_client();
             source_weights.insert("confluence".to_string(), confluence_cfg.weight);
-            sources.push(Box::new(ConfluenceSource::new(confluence_cfg.config.clone())));
+            sources.push(Box::new(ConfluenceSource::new_with_client(confluence_cfg.config.clone(), client.clone())));
+            confluence_detail = Some(ConfluenceSource::new_with_client(confluence_cfg.config.clone(), client));
         }
     }
 
     if let Some(ref jira_cfg) = app_config.sources.jira {
         if jira_cfg.enabled {
+            let client = JiraSource::build_client();
             source_weights.insert("jira".to_string(), jira_cfg.weight);
-            sources.push(Box::new(JiraSource::new(jira_cfg.config.clone())));
+            sources.push(Box::new(JiraSource::new_with_client(jira_cfg.config.clone(), client.clone())));
+            jira_detail = Some(JiraSource::new_with_client(jira_cfg.config.clone(), client));
         }
     }
 
@@ -132,25 +158,7 @@ async fn main() {
 
     let source_count = sources.len();
 
-    // Build per-source instances for get_detail lookups
-    let jira_detail = app_config
-        .sources
-        .jira
-        .as_ref()
-        .filter(|c| c.enabled)
-        .map(|c| JiraSource::new(c.config.clone()));
-    let confluence_detail = app_config
-        .sources
-        .confluence
-        .as_ref()
-        .filter(|c| c.enabled)
-        .map(|c| ConfluenceSource::new(c.config.clone()));
-    let slack_detail = app_config
-        .sources
-        .slack
-        .as_ref()
-        .filter(|c| c.enabled)
-        .map(|c| SlackSource::new(c.config.clone()));
+    // GitHub uses CLI subprocess (no HTTP client to share)
     let github_detail = app_config
         .sources
         .github

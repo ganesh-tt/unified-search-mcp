@@ -52,11 +52,20 @@ pub struct JiraSource {
 
 impl JiraSource {
     pub fn new(config: JiraConfig) -> Self {
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
-            .build()
-            .expect("Failed to build HTTP client");
+        let client = Self::build_client();
+        Self::new_with_client(config, client)
+    }
+
+    pub fn new_with_client(config: JiraConfig, client: Client) -> Self {
         Self { config, client }
+    }
+
+    pub fn build_client() -> Client {
+        Client::builder()
+            .timeout(std::time::Duration::from_secs(15))
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .build()
+            .expect("Failed to build HTTP client")
     }
 
     /// Build JQL query string from search text, project filters, and time filters.
@@ -131,6 +140,9 @@ impl JiraSource {
 
     /// Fetch full details for a single JIRA issue and return Markdown.
     pub async fn get_detail_issue(&self, key: &str) -> Result<String, SearchError> {
+        let issue_start = std::time::Instant::now();
+        tracing::info!(key = %key, "jira: get_detail_issue starting");
+
         // Validate JIRA key format (e.g., "FIN-1234", "PLAT-42") to prevent
         // path-traversal and URL injection.
         if !JIRA_KEY_VALIDATE_RE.is_match(key) {
@@ -178,6 +190,18 @@ impl JiraSource {
             });
         }
 
+        // Warn on oversized responses for monitoring
+        if let Some(len) = response.content_length() {
+            if len > 10 * 1024 * 1024 {
+                tracing::warn!(
+                    key = %key,
+                    content_length = len,
+                    "jira: large response body ({:.1} MB)",
+                    len as f64 / (1024.0 * 1024.0),
+                );
+            }
+        }
+
         let body: serde_json::Value =
             response.json().await.map_err(|e| SearchError::Source {
                 source_name: "jira".to_string(),
@@ -189,7 +213,8 @@ impl JiraSource {
             .and_then(|v| v.as_str())
             .unwrap_or(key);
 
-        let fields_obj = body.get("fields").cloned().unwrap_or(serde_json::Value::Null);
+        let null = serde_json::Value::Null;
+        let fields_obj = body.get("fields").unwrap_or(&null);
 
         let summary = fields_obj
             .get("summary")
@@ -291,15 +316,15 @@ impl JiraSource {
         md.push_str("\n\n");
 
         // Linked Issues
+        let empty_arr = vec![];
         let issue_links = fields_obj
             .get("issuelinks")
             .and_then(|l| l.as_array())
-            .cloned()
-            .unwrap_or_default();
+            .unwrap_or(&empty_arr);
 
         if !issue_links.is_empty() {
             md.push_str("## Linked Issues\n\n");
-            for link in &issue_links {
+            for link in issue_links {
                 let link_type = link
                     .get("type")
                     .and_then(|t| t.get("name"))
@@ -367,12 +392,11 @@ impl JiraSource {
         let subtasks = fields_obj
             .get("subtasks")
             .and_then(|s| s.as_array())
-            .cloned()
-            .unwrap_or_default();
+            .unwrap_or(&empty_arr);
 
         if !subtasks.is_empty() {
             md.push_str("## Subtasks\n\n");
-            for subtask in &subtasks {
+            for subtask in subtasks {
                 let st_key = subtask
                     .get("key")
                     .and_then(|k| k.as_str())
@@ -399,8 +423,7 @@ impl JiraSource {
             .get("comment")
             .and_then(|c| c.get("comments"))
             .and_then(|c| c.as_array())
-            .cloned()
-            .unwrap_or_default();
+            .unwrap_or(&empty_arr);
 
         let comment_total = fields_obj
             .get("comment")
@@ -410,7 +433,7 @@ impl JiraSource {
 
         if !comments.is_empty() {
             md.push_str(&format!("## Comments ({})\n\n", comment_total));
-            for comment in &comments {
+            for comment in comments {
                 let author = comment
                     .get("author")
                     .and_then(|a| a.get("displayName"))
@@ -434,6 +457,13 @@ impl JiraSource {
             }
         }
 
+        tracing::info!(
+            key = %key,
+            elapsed_ms = issue_start.elapsed().as_millis() as u64,
+            markdown_bytes = md.len(),
+            comment_count = comments.len(),
+            "jira: get_detail_issue complete",
+        );
         Ok(md)
     }
 }
@@ -554,12 +584,13 @@ impl SearchSource for JiraSource {
                 message: format!("Failed to parse response JSON: {}", e),
             })?;
 
+        let empty_issues = vec![];
         let issues = body
             .get("issues")
             .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default();
+            .unwrap_or(&empty_issues);
 
+        let null_val = serde_json::Value::Null;
         let total = issues.len();
         let mut results = Vec::with_capacity(total);
 
@@ -569,7 +600,7 @@ impl SearchSource for JiraSource {
                 .and_then(|v| v.as_str())
                 .unwrap_or("UNKNOWN");
 
-            let fields_obj = issue.get("fields").cloned().unwrap_or(serde_json::Value::Null);
+            let fields_obj = issue.get("fields").unwrap_or(&null_val);
 
             let summary = fields_obj
                 .get("summary")
@@ -631,12 +662,12 @@ impl SearchSource for JiraSource {
             }
 
             // Extract comments from the search response
+            let search_empty = vec![];
             let comments = fields_obj
                 .get("comment")
                 .and_then(|c| c.get("comments"))
                 .and_then(|c| c.as_array())
-                .cloned()
-                .unwrap_or_default();
+                .unwrap_or(&search_empty);
 
             let comment_count = fields_obj
                 .get("comment")
@@ -690,5 +721,53 @@ impl SearchSource for JiraSource {
         }
 
         Ok(results)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Deep comment search (separate path)
+// ---------------------------------------------------------------------------
+
+impl JiraSource {
+    /// Search JIRA then fetch ALL comments for each result. The regular search
+    /// API only returns a handful of comments; this calls `get_detail_issue` per
+    /// result to get the full comment history. Bounded: max 5 concurrent, 15s each.
+    pub async fn search_with_full_comments(
+        &self,
+        query: &SearchQuery,
+    ) -> Result<Vec<(SearchResult, String)>, SearchError> {
+        let results = self.search(query).await?;
+
+        use futures::stream::{self, StreamExt};
+
+        let enriched: Vec<_> = stream::iter(results.into_iter().map(|r| {
+            let key = r.title.split(':').next().unwrap_or("").trim().to_string();
+            async move {
+                if key.is_empty() || !JIRA_KEY_VALIDATE_RE.is_match(&key) {
+                    return (r, String::new());
+                }
+                match tokio::time::timeout(
+                    std::time::Duration::from_secs(15),
+                    self.get_detail_issue(&key),
+                )
+                .await
+                {
+                    Ok(Ok(detail_md)) => (r, detail_md),
+                    Ok(Err(e)) => {
+                        tracing::warn!(key = %key, error = %e, "jira: comment enrichment failed");
+                        (r, String::new())
+                    }
+                    Err(_) => {
+                        tracing::warn!(key = %key, "jira: comment enrichment timed out (15s)");
+                        (r, String::new())
+                    }
+                }
+            }
+        }))
+        .buffered(5)
+        .collect()
+        .await;
+
+        Ok(enriched)
     }
 }

@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 use std::process::Stdio;
+use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use regex::Regex;
 use tokio::process::Command;
 use tokio::time::timeout;
 
@@ -10,6 +12,11 @@ use crate::models::{
     HealthStatus, SearchError, SearchQuery, SearchResult, SourceHealth,
 };
 use super::SearchSource;
+
+/// Validates GitHub owner/repo names — alphanumeric, dots, hyphens, underscores.
+static VALID_GH_NAME_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[a-zA-Z0-9._-]+$").unwrap()
+});
 
 // ---------------------------------------------------------------------------
 // Config
@@ -131,8 +138,7 @@ impl GitHubSource {
         repo: &str,
         number: u64,
     ) -> Result<String, SearchError> {
-        let valid_name = regex::Regex::new(r"^[a-zA-Z0-9._-]+$").unwrap();
-        if !valid_name.is_match(owner) || !valid_name.is_match(repo) {
+        if !VALID_GH_NAME_RE.is_match(owner) || !VALID_GH_NAME_RE.is_match(repo) {
             return Err(SearchError::Source {
                 source_name: "github".to_string(),
                 message: format!("Invalid GitHub owner '{}' or repo '{}'", owner, repo),
@@ -226,9 +232,10 @@ impl GitHubSource {
         md.push_str(&format!("\n## Description\n\n{}\n", body));
 
         // Reviews
-        let reviews = reviews_json.as_array().cloned().unwrap_or_default();
+        let empty_arr = vec![];
+        let reviews = reviews_json.as_array().unwrap_or(&empty_arr);
         md.push_str(&format!("\n## Reviews ({})\n", reviews.len()));
-        for review in &reviews {
+        for review in reviews {
             let reviewer = review
                 .get("user")
                 .and_then(|u| u.get("login"))
@@ -245,9 +252,9 @@ impl GitHubSource {
         }
 
         // Review comments (line-level)
-        let comments = comments_json.as_array().cloned().unwrap_or_default();
+        let comments = comments_json.as_array().unwrap_or(&empty_arr);
         md.push_str(&format!("\n## Review Comments ({})\n", comments.len()));
-        for comment in &comments {
+        for comment in comments {
             let commenter = comment
                 .get("user")
                 .and_then(|u| u.get("login"))
@@ -278,8 +285,7 @@ impl GitHubSource {
         repo: &str,
         number: u64,
     ) -> Result<String, SearchError> {
-        let valid_name = regex::Regex::new(r"^[a-zA-Z0-9._-]+$").unwrap();
-        if !valid_name.is_match(owner) || !valid_name.is_match(repo) {
+        if !VALID_GH_NAME_RE.is_match(owner) || !VALID_GH_NAME_RE.is_match(repo) {
             return Err(SearchError::Source {
                 source_name: "github".to_string(),
                 message: format!("Invalid GitHub owner '{}' or repo '{}'", owner, repo),
@@ -351,9 +357,10 @@ impl GitHubSource {
         md.push_str(&format!("\n## Description\n\n{}\n", body));
 
         // Comments
-        let comments = comments_json.as_array().cloned().unwrap_or_default();
+        let issue_empty = vec![];
+        let comments = comments_json.as_array().unwrap_or(&issue_empty);
         md.push_str(&format!("\n## Comments ({})\n", comments.len()));
-        for comment in &comments {
+        for comment in comments {
             let commenter = comment
                 .get("user")
                 .and_then(|u| u.get("login"))
@@ -423,11 +430,11 @@ impl GitHubSource {
                 message: format!("Failed to parse issues JSON: {}", e),
             })?;
 
+        let search_empty = vec![];
         let items = body
             .get("items")
             .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default();
+            .unwrap_or(&search_empty);
 
         // Find max score for normalization
         let max_score = items
@@ -550,11 +557,11 @@ impl GitHubSource {
                 message: format!("Failed to parse code search JSON: {}", e),
             })?;
 
+        let code_empty = vec![];
         let items = body
             .get("items")
             .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default();
+            .unwrap_or(&code_empty);
 
         // Find max score for normalization
         let max_score = items

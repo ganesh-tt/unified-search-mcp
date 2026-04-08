@@ -1,6 +1,8 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+use tokio::sync::Mutex;
 
 use crate::cache::ResponseCache;
 use crate::models::{SearchQuery, SearchResult, SourceHealth, UnifiedSearchResponse};
@@ -65,10 +67,9 @@ impl SearchOrchestrator {
             if let Some(ref cache_mutex) = self.cache {
                 let source_names: Vec<String> = active_sources.iter().map(|s| s.name().to_string()).collect();
                 let source_refs: Vec<&str> = source_names.iter().map(|s| s.as_str()).collect();
-                if let Ok(mut cache) = cache_mutex.lock() {
-                    if let Some(cached) = cache.get(&query.text, &source_refs, query.max_results) {
-                        return cached;
-                    }
+                let mut cache = cache_mutex.lock().await;
+                if let Some(cached) = cache.get(&query.text, &source_refs, query.max_results) {
+                    return cached;
                 }
             }
         }
@@ -228,9 +229,8 @@ impl SearchOrchestrator {
         if let Some(ref cache_mutex) = self.cache {
             let source_names: Vec<String> = active_sources.iter().map(|s| s.name().to_string()).collect();
             let source_refs: Vec<&str> = source_names.iter().map(|s| s.as_str()).collect();
-            if let Ok(mut cache) = cache_mutex.lock() {
-                cache.put(&query.text, &source_refs, query.max_results, response.clone());
-            }
+            let mut cache = cache_mutex.lock().await;
+            cache.put(&query.text, &source_refs, query.max_results, response.clone());
         }
 
         response

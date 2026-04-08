@@ -37,14 +37,16 @@ impl MetricsLogger {
         Self { path }
     }
 
-    /// Log a metrics entry. Fire-and-forget via tokio::spawn.
+    /// Log a metrics entry. Offloaded to the blocking thread pool so sync
+    /// file I/O never stalls the tokio async runtime.
     pub async fn log(&self, entry: MetricsEntry) {
         let path = self.path.clone();
-        tokio::spawn(async move {
+        let _ = tokio::task::spawn_blocking(move || {
             if let Err(e) = write_entry(&path, &entry) {
                 eprintln!("metrics: failed to write: {}", e);
             }
-        });
+        })
+        .await;
     }
 }
 
