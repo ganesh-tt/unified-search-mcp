@@ -1,7 +1,7 @@
 # unified-search-mcp
 
 ## Tech Stack
-- Rust 1.75+, tokio async runtime, rmcp for MCP protocol
+- Rust 1.80+, tokio async runtime, rmcp for MCP protocol
 - reqwest for HTTP (Slack, Confluence, JIRA), tokio::process for CLI subprocess (GitHub `gh`, local `rg`)
 - serde_json for all JSON parsing, chrono for timestamps, regex for pattern matching
 
@@ -22,6 +22,9 @@
 - Fixtures in `fixtures/` directory, loaded via `include_str!`
 
 ## Common Gotchas
+- **ETXTBSY on Linux**: `NamedTempFile` keeps write fd open — exec fails on Linux. Use `TempDir` + `std::fs::write` for mock scripts.
+- **MSRV must match features**: `LazyLock` requires 1.80. Clippy enforces this via MSRV lint. Bump `Cargo.toml` rust-version if adding newer APIs.
+- **`cargo clippy --fix`** auto-fixes most lint issues but NOT: dead code, identical blocks, redundant conditions — those need manual fixes.
 - `SearchOrchestrator::new()` signature changes require updates in: main.rs, test_core.rs, test_server.rs, test_integration.rs
 - `UnifiedSearchServer::new()` same — currently takes (orchestrator, jira, confluence, slack, github, metrics)
 - `config.yaml` is gitignored (has secrets via env vars). Update `config.example.yaml` for new config fields.
@@ -55,3 +58,6 @@
 - `cargo test` — run all tests
 - `./target/release/unified-search-mcp --verify --config config.yaml` — preflight check
 - `./target/release/unified-search-mcp --stats --days 7` — adoption report
+- `gh release create vX.Y.Z --target master` — triggers release.yml, builds 4 platform binaries (linux/macos × x86_64/aarch64)
+- Release assets auto-upload as `.tar.gz` to the GitHub release
+- To re-trigger: `gh release delete vX.Y.Z --yes && git push origin :refs/tags/vX.Y.Z` then recreate
