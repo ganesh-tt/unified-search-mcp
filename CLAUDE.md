@@ -63,5 +63,7 @@
 - `./target/release/unified-search-mcp --verify --config config.yaml` — preflight check
 - `./target/release/unified-search-mcp --stats --days 7` — adoption report
 - `gh release create vX.Y.Z --target master` — triggers release.yml, builds 4 platform binaries (linux/macos × x86_64/aarch64)
+- **Release checklist**: bump `version` in Cargo.toml → add CHANGELOG entry → commit+push → `gh release create vX.Y.Z`
+- `gh repo edit --visibility public --accept-visibility-change-consequences` — required flag for visibility changes
 - Release assets auto-upload as `.tar.gz` to the GitHub release
 - To re-trigger: `gh release delete vX.Y.Z --yes && git push origin :refs/tags/vX.Y.Z` then recreate
