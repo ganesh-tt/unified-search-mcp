@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.3.2 (2026-04-10)
+
+### Performance
+- **O(n) dedup** — replaced O(n²) pairwise dedup with HashSet lookups. Previous: ~40,000 string normalizations for 200 results (caused 37s p95). Now: 200 normalizations, bounded by slowest source.
+- **Single-pass snippet normalization** — `normalize_snippet_prefix` rewritten: zero intermediate allocations (was: Vec + join + collect per call)
+- Cache wrapped in `Arc<Mutex<_>>` for future async write capability
+
+### Added
+- Pre-built release binaries for macOS (arm64/x86_64) and Linux (x86_64/aarch64) — no Rust toolchain needed
+- GitHub Actions release workflow: auto-builds 4 platform binaries on `gh release create`
+
 ## v0.3.1 (2026-04-10)
 
 ### Fixed
