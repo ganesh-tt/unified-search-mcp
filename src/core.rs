@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -30,7 +30,7 @@ impl Default for OrchestratorConfig {
 pub struct SearchOrchestrator {
     sources: Vec<Arc<dyn SearchSource>>,
     config: OrchestratorConfig,
-    cache: Option<Mutex<ResponseCache>>,
+    cache: Option<Arc<Mutex<ResponseCache>>>,
 }
 
 impl SearchOrchestrator {
@@ -40,10 +40,10 @@ impl SearchOrchestrator {
         cache_ttl_seconds: u64,
     ) -> Self {
         let cache = if cache_ttl_seconds > 0 {
-            Some(Mutex::new(ResponseCache::new(
+            Some(Arc::new(Mutex::new(ResponseCache::new(
                 100,
                 Duration::from_secs(cache_ttl_seconds),
-            )))
+            ))))
         } else {
             None
         };
@@ -199,29 +199,22 @@ impl SearchOrchestrator {
             }
         });
 
-        // Step 7: Dedup
+        // Step 7: Dedup — O(n) via HashSet instead of O(n²) pairwise comparison
+        let mut seen_urls: HashSet<String> = HashSet::new();
+        let mut seen_snippets: HashSet<String> = HashSet::new();
         let mut deduped: Vec<SearchResult> = Vec::new();
 
         for (_score, result) in scored_results {
-            let dominated = deduped.iter().any(|kept| {
-                // Same URL dedup (both Some and equal)
-                if let (Some(ref url_a), Some(ref url_b)) = (&result.url, &kept.url) {
-                    if url_a == url_b {
-                        return true;
-                    }
+            if let Some(ref url) = result.url {
+                if !seen_urls.insert(url.clone()) {
+                    continue; // duplicate URL
                 }
-                // Same normalized snippet prefix dedup
-                let norm_a = normalize_snippet_prefix(&result.snippet);
-                let norm_b = normalize_snippet_prefix(&kept.snippet);
-                if norm_a == norm_b {
-                    return true;
-                }
-                false
-            });
-
-            if !dominated {
-                deduped.push(result);
             }
+            let norm = normalize_snippet_prefix(&result.snippet);
+            if !norm.is_empty() && !seen_snippets.insert(norm) {
+                continue; // duplicate snippet prefix
+            }
+            deduped.push(result);
         }
 
         // Step 8: Truncate to min(query.max_results, config.max_results)
@@ -264,8 +257,23 @@ impl SearchOrchestrator {
     }
 }
 
-/// Normalize a snippet for dedup: take first 200 chars, collapse whitespace to single spaces.
+/// Normalize a snippet for dedup: collapse whitespace, take first 200 chars. Single-pass, no intermediate allocations.
 fn normalize_snippet_prefix(snippet: &str) -> String {
-    let collapsed: String = snippet.split_whitespace().collect::<Vec<&str>>().join(" ");
-    collapsed.chars().take(200).collect()
+    let mut result = String::with_capacity(200);
+    let mut prev_space = true;
+    for ch in snippet.chars() {
+        if ch.is_whitespace() {
+            if !prev_space && result.len() < 200 {
+                result.push(' ');
+            }
+            prev_space = true;
+        } else {
+            if result.len() >= 200 {
+                break;
+            }
+            result.push(ch);
+            prev_space = false;
+        }
+    }
+    result
 }
