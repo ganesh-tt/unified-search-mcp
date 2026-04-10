@@ -25,6 +25,9 @@
 - **ETXTBSY on Linux**: `NamedTempFile` keeps write fd open — exec fails on Linux. Use `TempDir` + `std::fs::write` for mock scripts.
 - **MSRV must match features**: `LazyLock` requires 1.80. Clippy enforces this via MSRV lint. Bump `Cargo.toml` rust-version if adding newer APIs.
 - **`cargo clippy --fix`** auto-fixes most lint issues but NOT: dead code, identical blocks, redundant conditions — those need manual fixes.
+- **Dedup must stay O(n)**: `core.rs` dedup uses HashSet for URL + snippet lookups. Never revert to pairwise comparison — caused 37s p95 at O(n²).
+- **Don't background cache writes**: `tokio::spawn` for cache put breaks `cache_returns_cached_results` test (race). Cache put is microseconds — keep synchronous.
+- **External tools**: `rg` (ripgrep) for local_text, `gh` CLI for GitHub. Both already optimal — no speedup from switching tools.
 - `SearchOrchestrator::new()` signature changes require updates in: main.rs, test_core.rs, test_server.rs, test_integration.rs
 - `UnifiedSearchServer::new()` same — currently takes (orchestrator, jira, confluence, slack, github, metrics)
 - `config.yaml` is gitignored (has secrets via env vars). Update `config.example.yaml` for new config fields.
@@ -36,6 +39,7 @@
 - Sync file I/O (`std::fs::*`, `walkdir`, `grep_searcher`) → `tokio::task::spawn_blocking`, never on async runtime
 - HTTP clients: use `Source::build_client()` + `new_with_client()` to share `reqwest::Client` between search and detail paths
 - `tokio::sync::Mutex` for cache, not `std::sync::Mutex` — prevents deadlock if lock held across `.await`
+- String normalization: single-pass with `String::with_capacity` — never `split_whitespace().collect::<Vec>().join()` (3 allocations per call)
 - Regexes: `LazyLock<Regex>` at module level, never compile inside functions
 - JSON arrays: borrow via `.as_array().unwrap_or(&empty)`, don't `.cloned()`
 
