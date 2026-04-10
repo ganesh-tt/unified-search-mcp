@@ -48,14 +48,21 @@ async fn successful_search_maps_results() {
 
     let config = default_config(&server.uri());
     let source = ConfluenceSource::new(config);
-    let results = source.search(&default_query("broadcast threshold")).await.unwrap();
+    let results = source
+        .search(&default_query("broadcast threshold"))
+        .await
+        .unwrap();
 
     assert_eq!(results.len(), 3);
 
     // First result
     assert_eq!(results[0].title, "Broadcast Threshold Design");
     assert_eq!(results[0].source, "confluence");
-    assert!(results[0].url.as_ref().unwrap().contains("/wiki/spaces/DEV/pages/12345"));
+    assert!(results[0]
+        .url
+        .as_ref()
+        .unwrap()
+        .contains("/wiki/spaces/DEV/pages/12345"));
 
     // Snippet should have HTML stripped
     assert!(!results[0].snippet.contains("<b>"));
@@ -386,7 +393,10 @@ async fn relevance_from_api_order() {
 
     let config = default_config(&server.uri());
     let source = ConfluenceSource::new(config);
-    let results = source.search(&default_query("broadcast threshold")).await.unwrap();
+    let results = source
+        .search(&default_query("broadcast threshold"))
+        .await
+        .unwrap();
 
     assert_eq!(results.len(), 3);
 
@@ -466,10 +476,7 @@ async fn query_with_cql_operators_literal() {
 
     let config = default_config(&server.uri());
     let source = ConfluenceSource::new(config);
-    let results = source
-        .search(&default_query("AND OR NOT"))
-        .await
-        .unwrap();
+    let results = source.search(&default_query("AND OR NOT")).await.unwrap();
 
     assert_eq!(results.len(), 0);
 }
@@ -487,7 +494,10 @@ async fn time_filter_after() {
 
     Mock::given(method("GET"))
         .and(path("/wiki/rest/api/search"))
-        .and(query_param_contains("cql", "lastmodified >= \"2026-03-01\""))
+        .and(query_param_contains(
+            "cql",
+            "lastmodified >= \"2026-03-01\"",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_raw(body, "application/json"))
         .mount(&server)
         .await;
@@ -522,7 +532,10 @@ async fn time_filter_before() {
 
     Mock::given(method("GET"))
         .and(path("/wiki/rest/api/search"))
-        .and(query_param_contains("cql", "lastmodified <= \"2026-03-15\""))
+        .and(query_param_contains(
+            "cql",
+            "lastmodified <= \"2026-03-15\"",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_raw(body, "application/json"))
         .mount(&server)
         .await;
@@ -566,7 +579,10 @@ async fn search_does_not_enrich_comments() {
 
     let config = default_config(&server.uri());
     let source = ConfluenceSource::new(config);
-    let results = source.search(&default_query("broadcast threshold")).await.unwrap();
+    let results = source
+        .search(&default_query("broadcast threshold"))
+        .await
+        .unwrap();
 
     assert_eq!(results.len(), 3);
 
@@ -608,14 +624,20 @@ async fn get_detail_page_returns_full_markdown() {
     let source = ConfluenceSource::new(config);
     let result = source.get_detail_page("123456").await.unwrap();
 
-    assert!(result.contains("Broadcast Threshold Design"), "Missing title");
+    assert!(
+        result.contains("Broadcast Threshold Design"),
+        "Missing title"
+    );
     assert!(result.contains("PROD"), "Missing space");
     assert!(result.contains("500 msg/s"), "Missing body content");
     assert!(result.contains("Load Test Results"), "Missing child page");
     assert!(result.contains("Configuration Guide"), "Missing child page");
     assert!(result.contains("Bob Smith"), "Missing comment author");
     assert!(result.contains("Looks good to me"), "Missing comment text");
-    assert!(result.contains("Charlie Lee"), "Missing second comment author");
+    assert!(
+        result.contains("Charlie Lee"),
+        "Missing second comment author"
+    );
     assert!(result.contains("architecture"), "Missing label");
     assert!(!result.contains("<h2>"), "HTML tags should be stripped");
     assert!(!result.contains("<p>"), "HTML tags should be stripped");
@@ -679,15 +701,25 @@ async fn get_detail_page_preserves_markdown_structure() {
     let result = source.get_detail_page("99999").await.unwrap();
 
     // Should have Markdown formatting
-    assert!(result.contains("## Overview"), "Should convert h2 to ##, got:\n{}", result);
+    assert!(
+        result.contains("## Overview"),
+        "Should convert h2 to ##, got:\n{}",
+        result
+    );
     assert!(result.contains("**bold**"), "Should convert strong to bold");
     assert!(result.contains("*italic*"), "Should convert em to italic");
-    assert!(result.contains("- Item one"), "Should convert ul/li to list");
+    assert!(
+        result.contains("- Item one"),
+        "Should convert ul/li to list"
+    );
     assert!(result.contains("| Col A | Col B |"), "Should convert table");
 
     // Should NOT have raw HTML
     assert!(!result.contains("<h2>"), "Should not have raw HTML tags");
-    assert!(!result.contains("<strong>"), "Should not have raw HTML tags");
+    assert!(
+        !result.contains("<strong>"),
+        "Should not have raw HTML tags"
+    );
 }
 
 // ===========================================================================
@@ -714,10 +746,7 @@ async fn cql_escapes_backslashes_and_quotes() {
 
     let config = default_config(&server.uri());
     let source = ConfluenceSource::new(config);
-    let results = source
-        .search(&default_query(r#"foo\bar"#))
-        .await
-        .unwrap();
+    let results = source.search(&default_query(r#"foo\bar"#)).await.unwrap();
     assert_eq!(results.len(), 0);
 }
 
@@ -825,7 +854,10 @@ async fn search_succeeds_without_comment_endpoints() {
 
     let config = default_config(&server.uri());
     let source = ConfluenceSource::new(config);
-    let results = source.search(&default_query("broadcast threshold")).await.unwrap();
+    let results = source
+        .search(&default_query("broadcast threshold"))
+        .await
+        .unwrap();
 
     // Search should succeed — no comment fetch attempted
     assert_eq!(results.len(), 3);

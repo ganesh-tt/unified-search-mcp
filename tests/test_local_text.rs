@@ -58,7 +58,10 @@ async fn finds_matches_in_rust_files() {
     let source = LocalTextSource::new(config);
     let results = source.search(&query("SearchResult")).await.unwrap();
 
-    assert!(!results.is_empty(), "Expected at least one match for 'SearchResult'");
+    assert!(
+        !results.is_empty(),
+        "Expected at least one match for 'SearchResult'"
+    );
     assert_eq!(results[0].source, "local_text");
     assert!(
         results[0].snippet.contains("SearchResult"),
@@ -75,7 +78,11 @@ async fn finds_matches_in_rust_files() {
 #[tokio::test]
 async fn include_pattern_filters() {
     let dir = TempDir::new().unwrap();
-    write_file(&dir, "main.rs", "fn hello() { println!(\"hello world\"); }\n");
+    write_file(
+        &dir,
+        "main.rs",
+        "fn hello() { println!(\"hello world\"); }\n",
+    );
     write_file(&dir, "config.yaml", "key: hello world\n");
 
     let config = LocalTextConfig {
@@ -88,7 +95,10 @@ async fn include_pattern_filters() {
     let source = LocalTextSource::new(config);
     let results = source.search(&query("hello")).await.unwrap();
 
-    assert!(!results.is_empty(), "Expected at least one match in .rs file");
+    assert!(
+        !results.is_empty(),
+        "Expected at least one match in .rs file"
+    );
     // All results should be from .rs files, not .yaml
     for r in &results {
         let title = r.title.to_lowercase();
@@ -144,7 +154,10 @@ async fn no_matches_returns_empty() {
 
     let config = config_for(&dir);
     let source = LocalTextSource::new(config);
-    let results = source.search(&query("nonexistent_xyzzy_term")).await.unwrap();
+    let results = source
+        .search(&query("nonexistent_xyzzy_term"))
+        .await
+        .unwrap();
 
     assert!(results.is_empty(), "Expected empty results for no matches");
 }
@@ -157,7 +170,9 @@ async fn no_matches_returns_empty() {
 #[tokio::test]
 async fn missing_path_warns() {
     let config = LocalTextConfig {
-        paths: vec![PathBuf::from("/tmp/nonexistent_path_unified_search_test_12345")],
+        paths: vec![PathBuf::from(
+            "/tmp/nonexistent_path_unified_search_test_12345",
+        )],
         include_patterns: vec![],
         exclude_patterns: vec![],
         max_file_size_bytes: 10 * 1024 * 1024,
@@ -166,7 +181,10 @@ async fn missing_path_warns() {
     let source = LocalTextSource::new(config);
     let results = source.search(&query("anything")).await.unwrap();
 
-    assert!(results.is_empty(), "Expected empty results for missing path");
+    assert!(
+        results.is_empty(),
+        "Expected empty results for missing path"
+    );
 }
 
 // ===========================================================================
@@ -255,11 +273,7 @@ async fn multiple_matches_single_result() {
         .get("match_count")
         .expect("Expected match_count in metadata");
     let count: usize = match_count.parse().expect("match_count should be numeric");
-    assert!(
-        count >= 3,
-        "Expected at least 3 matches, got {}",
-        count
-    );
+    assert!(count >= 3, "Expected at least 3 matches, got {}", count);
 }
 
 // ===========================================================================
@@ -270,21 +284,28 @@ async fn multiple_matches_single_result() {
 #[tokio::test]
 async fn relevance_by_match_count() {
     let dir = TempDir::new().unwrap();
-    write_file(
-        &dir,
-        "many.txt",
-        "beta\nbeta\nbeta\nbeta\nbeta\n",
-    );
+    write_file(&dir, "many.txt", "beta\nbeta\nbeta\nbeta\nbeta\n");
     write_file(&dir, "few.txt", "beta\n");
 
     let config = config_for(&dir);
     let source = LocalTextSource::new(config);
     let results = source.search(&query("beta")).await.unwrap();
 
-    assert_eq!(results.len(), 2, "Expected 2 results, got {}", results.len());
+    assert_eq!(
+        results.len(),
+        2,
+        "Expected 2 results, got {}",
+        results.len()
+    );
 
-    let many_result = results.iter().find(|r| r.title.contains("many.txt")).unwrap();
-    let few_result = results.iter().find(|r| r.title.contains("few.txt")).unwrap();
+    let many_result = results
+        .iter()
+        .find(|r| r.title.contains("many.txt"))
+        .unwrap();
+    let few_result = results
+        .iter()
+        .find(|r| r.title.contains("few.txt"))
+        .unwrap();
 
     assert!(
         many_result.relevance > few_result.relevance,
@@ -309,7 +330,10 @@ async fn file_url_generation() {
     let results = source.search(&query("unique_url_token")).await.unwrap();
 
     assert!(!results.is_empty(), "Expected at least one match");
-    let url = results[0].url.as_ref().expect("Expected a URL on the result");
+    let url = results[0]
+        .url
+        .as_ref()
+        .expect("Expected a URL on the result");
     assert!(
         url.starts_with("file:///"),
         "URL should start with file:///, got: {}",

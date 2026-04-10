@@ -4,17 +4,14 @@ use std::time::Instant;
 
 use regex::Regex;
 
-static JIRA_KEY_VALIDATE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^[A-Z][A-Z0-9]+-\d+$").unwrap()
-});
+static JIRA_KEY_VALIDATE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[A-Z][A-Z0-9]+-\d+$").unwrap());
 
+use crate::models::{HealthStatus, SearchError, SearchQuery, SearchResult, SourceHealth};
+use crate::sources::SearchSource;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use reqwest::Client;
-use crate::models::{
-    HealthStatus, SearchError, SearchQuery, SearchResult, SourceHealth,
-};
-use crate::sources::SearchSource;
 
 // ===========================================================================
 // Config
@@ -202,16 +199,12 @@ impl JiraSource {
             }
         }
 
-        let body: serde_json::Value =
-            response.json().await.map_err(|e| SearchError::Source {
-                source_name: "jira".to_string(),
-                message: format!("Failed to parse response JSON: {}", e),
-            })?;
+        let body: serde_json::Value = response.json().await.map_err(|e| SearchError::Source {
+            source_name: "jira".to_string(),
+            message: format!("Failed to parse response JSON: {}", e),
+        })?;
 
-        let issue_key = body
-            .get("key")
-            .and_then(|v| v.as_str())
-            .unwrap_or(key);
+        let issue_key = body.get("key").and_then(|v| v.as_str()).unwrap_or(key);
 
         let null = serde_json::Value::Null;
         let fields_obj = body.get("fields").unwrap_or(&null);
@@ -397,10 +390,7 @@ impl JiraSource {
         if !subtasks.is_empty() {
             md.push_str("## Subtasks\n\n");
             for subtask in subtasks {
-                let st_key = subtask
-                    .get("key")
-                    .and_then(|k| k.as_str())
-                    .unwrap_or("?");
+                let st_key = subtask.get("key").and_then(|k| k.as_str()).unwrap_or("?");
                 let st_summary = subtask
                     .get("fields")
                     .and_then(|f| f.get("summary"))
@@ -450,10 +440,13 @@ impl JiraSource {
                     .unwrap_or_default();
                 let body_text = comment
                     .get("body")
-                    .map(|b| Self::extract_adf_text(b))
+                    .map(Self::extract_adf_text)
                     .unwrap_or_default();
 
-                md.push_str(&format!("### {} — {}\n\n{}\n\n", author, created_date, body_text));
+                md.push_str(&format!(
+                    "### {} — {}\n\n{}\n\n",
+                    author, created_date, body_text
+                ));
             }
         }
 
@@ -578,11 +571,10 @@ impl SearchSource for JiraSource {
             });
         }
 
-        let body: serde_json::Value =
-            response.json().await.map_err(|e| SearchError::Source {
-                source_name: "jira".to_string(),
-                message: format!("Failed to parse response JSON: {}", e),
-            })?;
+        let body: serde_json::Value = response.json().await.map_err(|e| SearchError::Source {
+            source_name: "jira".to_string(),
+            message: format!("Failed to parse response JSON: {}", e),
+        })?;
 
         let empty_issues = vec![];
         let issues = body
@@ -697,7 +689,7 @@ impl SearchSource for JiraSource {
                         .unwrap_or_default();
                     let body_raw = comment
                         .get("body")
-                        .map(|b| Self::extract_adf_text(b))
+                        .map(Self::extract_adf_text)
                         .unwrap_or_default();
                     let body = Self::truncate_description(&body_raw, 150);
                     comment_texts.push((author.to_string(), created, body));

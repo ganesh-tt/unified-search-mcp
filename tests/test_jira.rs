@@ -49,9 +49,8 @@ fn jira_issue(
     assignee: Option<&str>,
     updated: &str,
 ) -> serde_json::Value {
-    let assignee_val = assignee.map_or(serde_json::Value::Null, |name| {
-        json!({"displayName": name})
-    });
+    let assignee_val =
+        assignee.map_or(serde_json::Value::Null, |name| json!({"displayName": name}));
     let desc_val = description.unwrap_or(serde_json::Value::Null);
     json!({
         "key": key,
@@ -132,7 +131,11 @@ async fn successful_search_maps_results() {
     assert_eq!(results[0].source, "jira");
     assert_eq!(results[0].title, "FIN-100: Fix OOM in broadcast");
     assert_eq!(results[0].snippet, "Broadcast was unbounded");
-    assert!(results[0].url.as_ref().unwrap().ends_with("/browse/FIN-100"));
+    assert!(results[0]
+        .url
+        .as_ref()
+        .unwrap()
+        .ends_with("/browse/FIN-100"));
     assert!(results[0].timestamp.is_some());
 
     // Second result
@@ -269,7 +272,8 @@ async fn forbidden_403() {
 
     let err_msg = format!("{}", err);
     assert!(
-        err_msg.to_lowercase().contains("permission") || err_msg.to_lowercase().contains("forbidden"),
+        err_msg.to_lowercase().contains("permission")
+            || err_msg.to_lowercase().contains("forbidden"),
         "Expected permission/forbidden error, got: {}",
         err_msg
     );
@@ -285,9 +289,7 @@ async fn rate_limited_429() {
 
     Mock::given(method("GET"))
         .and(path("/rest/api/3/search"))
-        .respond_with(
-            ResponseTemplate::new(429).insert_header("Retry-After", "60"),
-        )
+        .respond_with(ResponseTemplate::new(429).insert_header("Retry-After", "60"))
         .mount(&server)
         .await;
 
@@ -370,10 +372,7 @@ async fn malformed_json() {
 
     Mock::given(method("GET"))
         .and(path("/rest/api/3/search"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string("this is not json {{{"),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_string("this is not json {{{"))
         .mount(&server)
         .await;
 
@@ -399,8 +398,9 @@ async fn health_check() {
     Mock::given(method("GET"))
         .and(path("/rest/api/3/myself"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(json!({"displayName": "Test User", "emailAddress": "user@example.com"})),
+            ResponseTemplate::new(200).set_body_json(
+                json!({"displayName": "Test User", "emailAddress": "user@example.com"}),
+            ),
         )
         .mount(&server)
         .await;
@@ -490,9 +490,30 @@ async fn relevance_from_api_order() {
     let server = MockServer::start().await;
 
     let issues = vec![
-        jira_issue("FIN-1", "First", Some(adf_text("first")), "Open", None, "2026-03-15T10:00:00.000+0000"),
-        jira_issue("FIN-2", "Second", Some(adf_text("second")), "Open", None, "2026-03-14T10:00:00.000+0000"),
-        jira_issue("FIN-3", "Third", Some(adf_text("third")), "Open", None, "2026-03-13T10:00:00.000+0000"),
+        jira_issue(
+            "FIN-1",
+            "First",
+            Some(adf_text("first")),
+            "Open",
+            None,
+            "2026-03-15T10:00:00.000+0000",
+        ),
+        jira_issue(
+            "FIN-2",
+            "Second",
+            Some(adf_text("second")),
+            "Open",
+            None,
+            "2026-03-14T10:00:00.000+0000",
+        ),
+        jira_issue(
+            "FIN-3",
+            "Third",
+            Some(adf_text("third")),
+            "Open",
+            None,
+            "2026-03-13T10:00:00.000+0000",
+        ),
     ];
 
     Mock::given(method("GET"))
@@ -640,7 +661,11 @@ async fn search_handles_empty_comments() {
     let results = source.search(&make_query("test")).await.unwrap();
 
     assert_eq!(results.len(), 1);
-    let count = results[0].metadata.get("comment_count").map(|s| s.as_str()).unwrap_or("0");
+    let count = results[0]
+        .metadata
+        .get("comment_count")
+        .map(|s| s.as_str())
+        .unwrap_or("0");
     assert_eq!(count, "0");
     assert!(
         !results[0].snippet.contains("Comments ("),
@@ -667,8 +692,14 @@ async fn get_detail_issue_returns_full_markdown() {
     let source = JiraSource::new(config);
     let result = source.get_detail_issue("FIN-1234").await.unwrap();
 
-    assert!(result.contains("FIN-1234: Fix broadcast threshold OOM"), "Missing title");
-    assert!(result.contains("broadcast queue grows unbounded"), "Missing description");
+    assert!(
+        result.contains("FIN-1234: Fix broadcast threshold OOM"),
+        "Missing title"
+    );
+    assert!(
+        result.contains("broadcast queue grows unbounded"),
+        "Missing description"
+    );
     assert!(result.contains("In Progress"), "Missing status");
     assert!(result.contains("Alice Chen"), "Missing assignee");
     assert!(result.contains("v6.3.4"), "Missing fix version");
@@ -678,7 +709,10 @@ async fn get_detail_issue_returns_full_markdown() {
     assert!(result.contains("FIN-1234-1"), "Missing subtask 1");
     assert!(result.contains("FIN-1234-2"), "Missing subtask 2");
     assert!(result.contains("Bob Smith"), "Missing comment author");
-    assert!(result.contains("Reproduced on staging"), "Missing comment body");
+    assert!(
+        result.contains("Reproduced on staging"),
+        "Missing comment body"
+    );
 }
 
 // ===========================================================================
@@ -729,10 +763,7 @@ async fn jql_escapes_backslashes_and_quotes() {
 
     let config = make_config(&server.uri());
     let source = JiraSource::new(config);
-    let results = source
-        .search(&make_query(r#"foo\bar"#))
-        .await
-        .unwrap();
+    let results = source.search(&make_query(r#"foo\bar"#)).await.unwrap();
     assert_eq!(results.len(), 0);
     // If mock matched (expect(1)), the backslash was correctly doubled
 }

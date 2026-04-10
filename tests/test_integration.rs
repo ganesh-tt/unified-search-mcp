@@ -113,7 +113,11 @@ fn setup_local_text_dir() -> TempDir {
     let mut f = std::fs::File::create(&file_path).expect("Failed to create test file");
     writeln!(f, "# Broadcast Threshold Notes").unwrap();
     writeln!(f, "").unwrap();
-    writeln!(f, "The broadcast threshold was set to 50K rows after the OOM incident.").unwrap();
+    writeln!(
+        f,
+        "The broadcast threshold was set to 50K rows after the OOM incident."
+    )
+    .unwrap();
     writeln!(f, "This is now configurable via amls_dynamic_properties.").unwrap();
     f.flush().unwrap();
     dir
@@ -195,18 +199,14 @@ async fn full_pipeline_all_sources_mocked() {
     // Mount Slack mock
     Mock::given(method("GET"))
         .and(path("/api/search.messages"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(slack_success_body()),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(slack_success_body()))
         .mount(&slack_server)
         .await;
 
     // Mount Confluence mock
     Mock::given(method("GET"))
         .and(path("/wiki/rest/api/search"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(confluence_success_body()),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(confluence_success_body()))
         .mount(&confluence_server)
         .await;
 
@@ -214,8 +214,7 @@ async fn full_pipeline_all_sources_mocked() {
     Mock::given(method("GET"))
         .and(path("/rest/api/3/search"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(jira_success_body(&jira_server.uri())),
+            ResponseTemplate::new(200).set_body_json(jira_success_body(&jira_server.uri())),
         )
         .mount(&jira_server)
         .await;
@@ -284,21 +283,17 @@ async fn mixed_success_failure() {
     // Slack returns auth error (ok: false)
     Mock::given(method("GET"))
         .and(path("/api/search.messages"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(json!({
-                "ok": false,
-                "error": "invalid_auth"
-            })),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "ok": false,
+            "error": "invalid_auth"
+        })))
         .mount(&slack_server)
         .await;
 
     // Confluence succeeds
     Mock::given(method("GET"))
         .and(path("/wiki/rest/api/search"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(confluence_success_body()),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(confluence_success_body()))
         .mount(&confluence_server)
         .await;
 
@@ -306,8 +301,7 @@ async fn mixed_success_failure() {
     Mock::given(method("GET"))
         .and(path("/rest/api/3/search"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(jira_success_body(&jira_server.uri())),
+            ResponseTemplate::new(200).set_body_json(jira_success_body(&jira_server.uri())),
         )
         .mount(&jira_server)
         .await;
@@ -363,9 +357,7 @@ async fn search_source_single() {
     // Mount confluence mock
     Mock::given(method("GET"))
         .and(path("/wiki/rest/api/search"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(confluence_success_body()),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(confluence_success_body()))
         .mount(&confluence_server)
         .await;
 
@@ -373,8 +365,7 @@ async fn search_source_single() {
     Mock::given(method("GET"))
         .and(path("/rest/api/3/search"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(jira_success_body(&jira_server.uri())),
+            ResponseTemplate::new(200).set_body_json(jira_success_body(&jira_server.uri())),
         )
         .expect(0) // should not be called
         .mount(&jira_server)
@@ -442,10 +433,7 @@ async fn list_sources_health() {
     // Mount Confluence space endpoint (healthy)
     Mock::given(method("GET"))
         .and(path("/wiki/rest/api/space"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(json!({"results": [], "size": 0})),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"results": [], "size": 0})))
         .mount(&confluence_server)
         .await;
 
@@ -497,25 +485,20 @@ async fn unified_search_returns_markdown_table() {
     // Mount all mocks
     Mock::given(method("GET"))
         .and(path("/api/search.messages"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(slack_success_body()),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(slack_success_body()))
         .mount(&slack_server)
         .await;
 
     Mock::given(method("GET"))
         .and(path("/wiki/rest/api/search"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(confluence_success_body()),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(confluence_success_body()))
         .mount(&confluence_server)
         .await;
 
     Mock::given(method("GET"))
         .and(path("/rest/api/3/search"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(jira_success_body(&jira_server.uri())),
+            ResponseTemplate::new(200).set_body_json(jira_success_body(&jira_server.uri())),
         )
         .mount(&jira_server)
         .await;
@@ -560,7 +543,10 @@ async fn unified_search_returns_markdown_table() {
         output.contains("**Sources**") || output.contains("**Sources queried**"),
         "Expected sources queried footer"
     );
-    assert!(output.contains("**Time**") || output.contains("**Total**"), "Expected time footer");
+    assert!(
+        output.contains("**Time**") || output.contains("**Total**"),
+        "Expected time footer"
+    );
     assert!(output.contains("ms"), "Expected milliseconds in time");
 }
 
@@ -579,18 +565,14 @@ async fn source_filter_respected() {
     // Mount Slack mock
     Mock::given(method("GET"))
         .and(path("/api/search.messages"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(slack_success_body()),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(slack_success_body()))
         .mount(&slack_server)
         .await;
 
     // Confluence mock should NOT be called
     Mock::given(method("GET"))
         .and(path("/wiki/rest/api/search"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(confluence_success_body()),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(confluence_success_body()))
         .expect(0) // asserts 0 calls
         .mount(&confluence_server)
         .await;
@@ -599,8 +581,7 @@ async fn source_filter_respected() {
     Mock::given(method("GET"))
         .and(path("/rest/api/3/search"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(jira_success_body(&jira_server.uri())),
+            ResponseTemplate::new(200).set_body_json(jira_success_body(&jira_server.uri())),
         )
         .mount(&jira_server)
         .await;
@@ -738,10 +719,7 @@ async fn max_results_global() {
         data_rows.len(),
         data_rows
     );
-    assert!(
-        !data_rows.is_empty(),
-        "Expected at least 1 result row"
-    );
+    assert!(!data_rows.is_empty(), "Expected at least 1 result row");
 }
 
 // ===========================================================================
@@ -798,7 +776,10 @@ async fn integration_get_detail_jira_detection() {
     use unified_search_mcp::resolve::detect_source;
 
     let (source_type, parsed) = detect_source("FIN-1234").unwrap();
-    assert!(matches!(source_type, unified_search_mcp::resolve::SourceType::Jira));
+    assert!(matches!(
+        source_type,
+        unified_search_mcp::resolve::SourceType::Jira
+    ));
     match parsed {
         unified_search_mcp::resolve::ParsedIdentifier::JiraKey(k) => assert_eq!(k, "FIN-1234"),
         other => panic!("Expected JiraKey, got {:?}", other),

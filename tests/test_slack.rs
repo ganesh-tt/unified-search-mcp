@@ -201,10 +201,7 @@ async fn username_in_metadata() {
     let results = source.search(&query("test")).await.unwrap();
 
     assert_eq!(results.len(), 1);
-    assert_eq!(
-        results[0].metadata.get("user"),
-        Some(&"ganesh".to_string())
-    );
+    assert_eq!(results[0].metadata.get("user"), Some(&"ganesh".to_string()));
 }
 
 // ===========================================================================
@@ -219,9 +216,7 @@ async fn empty_results() {
     Mock::given(method("GET"))
         .and(path("/api/search.messages"))
         .and(header("Authorization", "Bearer xoxp-test-token-12345"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(slack_search_response(vec![])),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(slack_search_response(vec![])))
         .mount(&server)
         .await;
 
@@ -378,9 +373,7 @@ async fn malformed_json() {
 
     Mock::given(method("GET"))
         .and(path("/api/search.messages"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_string("this is not valid json {{{"),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_string("this is not valid json {{{"))
         .mount(&server)
         .await;
 
@@ -484,7 +477,10 @@ async fn relevance_from_score() {
     }
 
     // Highest score (10.0) should normalize to 1.0
-    let highest = results.iter().find(|r| r.snippet == "highest score").unwrap();
+    let highest = results
+        .iter()
+        .find(|r| r.snippet == "highest score")
+        .unwrap();
     assert!(
         (highest.relevance - 1.0).abs() < 0.01,
         "Highest score should normalize to ~1.0, got {}",
@@ -492,7 +488,10 @@ async fn relevance_from_score() {
     );
 
     // Medium score (5.0) should normalize to 0.5
-    let medium = results.iter().find(|r| r.snippet == "medium score").unwrap();
+    let medium = results
+        .iter()
+        .find(|r| r.snippet == "medium score")
+        .unwrap();
     assert!(
         (medium.relevance - 0.5).abs() < 0.01,
         "Medium score should normalize to ~0.5, got {}",
@@ -554,9 +553,18 @@ async fn get_detail_thread_returns_full_markdown() {
         .unwrap();
 
     assert!(result.contains("engineering"), "Missing channel name");
-    assert!(result.contains("broadcast threshold"), "Missing original message");
-    assert!(result.contains("800 msg/s before OOM"), "Missing reply content");
-    assert!(result.contains("circuit breaker at 750"), "Missing second reply");
+    assert!(
+        result.contains("broadcast threshold"),
+        "Missing original message"
+    );
+    assert!(
+        result.contains("800 msg/s before OOM"),
+        "Missing reply content"
+    );
+    assert!(
+        result.contains("circuit breaker at 750"),
+        "Missing second reply"
+    );
 }
 
 // ===========================================================================

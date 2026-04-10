@@ -203,7 +203,9 @@ async fn search_returns_issues_and_prs() {
         results[0].url.as_deref(),
         Some("https://github.com/tookitaki/product-amls/pull/123")
     );
-    assert!(results[0].snippet.contains("broadcast queue grows unbounded"));
+    assert!(results[0]
+        .snippet
+        .contains("broadcast queue grows unbounded"));
     assert_eq!(results[0].metadata.get("kind").unwrap(), "PR");
     assert_eq!(results[0].metadata.get("state").unwrap(), "open");
     assert!(results[0].timestamp.is_some());
@@ -739,10 +741,7 @@ async fn get_detail_pr_open_status() {
     let config = make_config(script.path().to_str().unwrap());
     let source = GitHubSource::new(config);
 
-    let md = source
-        .get_detail_pr("org", "repo", 99)
-        .await
-        .unwrap();
+    let md = source.get_detail_pr("org", "repo", 99).await.unwrap();
 
     // Open PR should show "Open", not "Merged"
     assert!(md.contains("| Status | Open |"));
@@ -769,17 +768,11 @@ async fn get_detail_issue_no_labels() {
         "labels": []
     }"#;
 
-    let script = make_detail_gh_script(&[
-        ("issues/1/comments", "[]"),
-        ("issues/1", issue_json),
-    ]);
+    let script = make_detail_gh_script(&[("issues/1/comments", "[]"), ("issues/1", issue_json)]);
     let config = make_config(script.path().to_str().unwrap());
     let source = GitHubSource::new(config);
 
-    let md = source
-        .get_detail_issue("org", "repo", 1)
-        .await
-        .unwrap();
+    let md = source.get_detail_issue("org", "repo", 1).await.unwrap();
 
     assert!(md.contains("| Status | Closed |"));
     // No labels row when labels array is empty

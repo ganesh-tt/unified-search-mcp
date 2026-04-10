@@ -1,4 +1,4 @@
-use unified_search_mcp::resolve::{detect_source, force_source, SourceType, ParsedIdentifier};
+use unified_search_mcp::resolve::{detect_source, force_source, ParsedIdentifier, SourceType};
 
 #[test]
 fn detects_jira_key() {
@@ -9,9 +9,8 @@ fn detects_jira_key() {
 
 #[test]
 fn detects_jira_url() {
-    let (source_type, parsed) =
-        detect_source("https://tookitaki.atlassian.net/browse/FIN-1234")
-            .expect("Should detect JIRA URL");
+    let (source_type, parsed) = detect_source("https://tookitaki.atlassian.net/browse/FIN-1234")
+        .expect("Should detect JIRA URL");
     assert!(matches!(source_type, SourceType::Jira));
     match parsed {
         ParsedIdentifier::JiraUrl { key, .. } => assert_eq!(key, "FIN-1234"),
@@ -156,7 +155,11 @@ fn detects_github_pr_url() {
     let (st, parsed) = detect_source("https://github.com/tookitaki/product-amls/pull/123").unwrap();
     assert!(matches!(st, SourceType::GitHub));
     match parsed {
-        ParsedIdentifier::GitHubPR { owner, repo, number } => {
+        ParsedIdentifier::GitHubPR {
+            owner,
+            repo,
+            number,
+        } => {
             assert_eq!(owner, "tookitaki");
             assert_eq!(repo, "product-amls");
             assert_eq!(number, 123);
@@ -167,10 +170,15 @@ fn detects_github_pr_url() {
 
 #[test]
 fn detects_github_issue_url() {
-    let (st, parsed) = detect_source("https://github.com/tookitaki/product-amls/issues/456").unwrap();
+    let (st, parsed) =
+        detect_source("https://github.com/tookitaki/product-amls/issues/456").unwrap();
     assert!(matches!(st, SourceType::GitHub));
     match parsed {
-        ParsedIdentifier::GitHubIssue { owner, repo, number } => {
+        ParsedIdentifier::GitHubIssue {
+            owner,
+            repo,
+            number,
+        } => {
             assert_eq!(owner, "tookitaki");
             assert_eq!(repo, "product-amls");
             assert_eq!(number, 456);
@@ -199,7 +207,8 @@ fn github_shorthand_only_with_force() {
 #[test]
 fn github_pr_url_with_extra_path() {
     // PR URLs sometimes have /files or /commits suffix — should still match
-    let (st, parsed) = detect_source("https://github.com/tookitaki/product-amls/pull/99/files").unwrap();
+    let (st, parsed) =
+        detect_source("https://github.com/tookitaki/product-amls/pull/99/files").unwrap();
     assert!(matches!(st, SourceType::GitHub));
     match parsed {
         ParsedIdentifier::GitHubPR { number, .. } => assert_eq!(number, 99),
@@ -215,7 +224,11 @@ fn force_source_github_with_full_url() {
     let (st, parsed) = result.unwrap();
     assert!(matches!(st, SourceType::GitHub));
     match parsed {
-        ParsedIdentifier::GitHubPR { owner, repo, number } => {
+        ParsedIdentifier::GitHubPR {
+            owner,
+            repo,
+            number,
+        } => {
             assert_eq!(owner, "org");
             assert_eq!(repo, "repo");
             assert_eq!(number, 42);

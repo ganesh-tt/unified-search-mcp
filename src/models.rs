@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use std::cmp::Ordering;
-use std::fmt;
 use chrono::{DateTime, Utc};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
+use std::collections::HashMap;
+use std::fmt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchQuery {
@@ -113,11 +113,20 @@ pub enum SearchError {
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
     #[error("{source_name}: authentication failed — {message}")]
-    Auth { source_name: String, message: String },
+    Auth {
+        source_name: String,
+        message: String,
+    },
     #[error("{source_name}: rate limited — retry after {retry_after_secs}s")]
-    RateLimited { source_name: String, retry_after_secs: u64 },
+    RateLimited {
+        source_name: String,
+        retry_after_secs: u64,
+    },
     #[error("{source_name}: {message}")]
-    Source { source_name: String, message: String },
+    Source {
+        source_name: String,
+        message: String,
+    },
     #[error("Config error: {0}")]
     Config(String),
     #[error("{0}")]
@@ -126,6 +135,10 @@ pub enum SearchError {
 
 impl Default for SearchQuery {
     fn default() -> Self {
-        Self { text: String::new(), max_results: 20, filters: SearchFilters::default() }
+        Self {
+            text: String::new(),
+            max_results: 20,
+            filters: SearchFilters::default(),
+        }
     }
 }

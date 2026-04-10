@@ -1,14 +1,19 @@
+use chrono::{DateTime, Duration, Utc};
 use std::path::PathBuf;
-use chrono::{DateTime, Utc, Duration};
 
 pub fn run_stats(metrics_path: &str, days: u64) {
-    println!("Note: --stats scans ~/.claude/projects/ conversation logs to detect bypass tool calls.");
+    println!(
+        "Note: --stats scans ~/.claude/projects/ conversation logs to detect bypass tool calls."
+    );
     println!("No conversation content is read — only tool call names are counted.\n");
 
     let cutoff = Utc::now() - Duration::days(days as i64);
     let path = PathBuf::from(shellexpand::tilde(metrics_path).to_string());
 
-    println!("=== Unified Search Adoption Report (last {} days) ===\n", days);
+    println!(
+        "=== Unified Search Adoption Report (last {} days) ===\n",
+        days
+    );
 
     let entries = read_metrics(&path, &cutoff);
     if entries.is_empty() {
@@ -72,7 +77,8 @@ fn read_metrics(path: &PathBuf, cutoff: &DateTime<Utc>) -> Vec<serde_json::Value
         .lines()
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
         .filter(|entry| {
-            entry.get("ts")
+            entry
+                .get("ts")
                 .and_then(|ts| ts.as_str())
                 .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
                 .map(|dt| dt.with_timezone(&Utc) >= *cutoff)
@@ -107,7 +113,11 @@ fn report_tool_stats(label: &str, entries: &[&serde_json::Value]) {
 
     println!(
         "{}:  {} calls  (avg {}ms, p50 {}ms, p95 {}ms)",
-        label, entries.len(), avg, p50, p95
+        label,
+        entries.len(),
+        avg,
+        p50,
+        p95
     );
 }
 
@@ -127,13 +137,17 @@ fn scan_claude_code_logs(cutoff: &DateTime<Utc>) -> std::collections::HashMap<St
             if let Ok(content) = std::fs::read_to_string(&file_path) {
                 for line in content.lines() {
                     if let Ok(entry) = serde_json::from_str::<serde_json::Value>(line) {
-                        let in_range = entry.get("timestamp").or(entry.get("ts"))
+                        let in_range = entry
+                            .get("timestamp")
+                            .or(entry.get("ts"))
                             .and_then(|ts| ts.as_str())
                             .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
                             .map(|dt| dt.with_timezone(&Utc) >= *cutoff)
                             .unwrap_or(true);
 
-                        if !in_range { continue; }
+                        if !in_range {
+                            continue;
+                        }
 
                         if let Some(name) = entry.get("name").and_then(|v| v.as_str()) {
                             for bypass in &bypass_tools {
@@ -162,7 +176,7 @@ fn glob_conversation_files(base: &PathBuf) -> Result<Vec<PathBuf>, std::io::Erro
                     if let Ok(conv_entries) = std::fs::read_dir(&convos) {
                         for conv in conv_entries.flatten() {
                             let conv_path = conv.path();
-                            if conv_path.extension().map_or(false, |e| e == "jsonl") {
+                            if conv_path.extension().is_some_and(|e| e == "jsonl") {
                                 files.push(conv_path);
                             }
                         }

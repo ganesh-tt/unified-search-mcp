@@ -183,6 +183,7 @@ struct RawLocalTextConfig {
     #[serde(default = "default_weight")]
     weight: f32,
     #[serde(default = "default_source_max_results")]
+    #[allow(dead_code)]
     max_results: usize,
 }
 
@@ -232,9 +233,8 @@ pub fn load(path: &str) -> Result<AppConfig, SearchError> {
     let (interpolated, missing_vars) = interpolate_env_vars(&content)?;
 
     // Parse YAML
-    let raw: RawConfig = serde_yml::from_str(&interpolated).map_err(|e| {
-        SearchError::Config(format!("Invalid YAML in '{}': {}", path, e))
-    })?;
+    let raw: RawConfig = serde_yml::from_str(&interpolated)
+        .map_err(|e| SearchError::Config(format!("Invalid YAML in '{}': {}", path, e)))?;
 
     // Build AppConfig with defaults
     let server = match raw.server {
@@ -243,7 +243,9 @@ pub fn load(path: &str) -> Result<AppConfig, SearchError> {
             max_results: s.max_results.unwrap_or(20),
             timeout_seconds: s.timeout_seconds.unwrap_or(10),
             log_level: s.log_level.unwrap_or_else(|| "info".to_string()),
-            metrics_path: s.metrics_path.unwrap_or_else(|| "~/.unified-search/metrics.jsonl".to_string()),
+            metrics_path: s
+                .metrics_path
+                .unwrap_or_else(|| "~/.unified-search/metrics.jsonl".to_string()),
             cache_ttl_seconds: s.cache_ttl_seconds.unwrap_or(300),
         },
         None => ServerConfig::default(),
@@ -299,45 +301,44 @@ fn expand_tilde(path: &str) -> String {
 }
 
 /// Build the SourcesConfig from the raw deserialized data.
-fn build_sources(raw: RawSourcesConfig, missing_vars: &[String]) -> Result<SourcesConfig, SearchError> {
-    let slack = raw.slack.map(|s| {
-        SlackSourceConfig {
-            enabled: s.enabled,
-            weight: s.weight,
-            config: SlackConfig {
-                user_token: s.user_token,
-                max_results: s.max_results,
-                base_url: s.base_url.unwrap_or_else(|| "https://slack.com".to_string()),
-            },
-        }
+fn build_sources(
+    raw: RawSourcesConfig,
+    missing_vars: &[String],
+) -> Result<SourcesConfig, SearchError> {
+    let slack = raw.slack.map(|s| SlackSourceConfig {
+        enabled: s.enabled,
+        weight: s.weight,
+        config: SlackConfig {
+            user_token: s.user_token,
+            max_results: s.max_results,
+            base_url: s
+                .base_url
+                .unwrap_or_else(|| "https://slack.com".to_string()),
+        },
     });
 
-    let confluence = raw.confluence.map(|c| {
-        ConfluenceSourceConfig {
-            enabled: c.enabled,
-            weight: c.weight,
-            config: ConfluenceConfig {
-                base_url: c.base_url,
-                email: c.email,
-                api_token: c.api_token,
-                spaces: c.spaces,
-                max_results: c.max_results,
-            },
-        }
+    let confluence = raw.confluence.map(|c| ConfluenceSourceConfig {
+        enabled: c.enabled,
+        weight: c.weight,
+        config: ConfluenceConfig {
+            base_url: c.base_url,
+            email: c.email,
+            api_token: c.api_token,
+            spaces: c.spaces,
+            max_results: c.max_results,
+        },
     });
 
-    let jira = raw.jira.map(|j| {
-        JiraSourceConfig {
-            enabled: j.enabled,
-            weight: j.weight,
-            config: JiraConfig {
-                base_url: j.base_url,
-                email: j.email,
-                api_token: j.api_token,
-                projects: j.projects,
-                max_results: j.max_results,
-            },
-        }
+    let jira = raw.jira.map(|j| JiraSourceConfig {
+        enabled: j.enabled,
+        weight: j.weight,
+        config: JiraConfig {
+            base_url: j.base_url,
+            email: j.email,
+            api_token: j.api_token,
+            projects: j.projects,
+            max_results: j.max_results,
+        },
     });
 
     let local_text = raw.local_text.map(|lt| {
@@ -359,17 +360,15 @@ fn build_sources(raw: RawSourcesConfig, missing_vars: &[String]) -> Result<Sourc
         }
     });
 
-    let github = raw.github.map(|g| {
-        GitHubSourceConfig {
-            enabled: g.enabled,
-            weight: g.weight,
-            config: GitHubConfig {
-                orgs: g.orgs,
-                repos: g.repos,
-                max_results: g.max_results,
-                gh_path: "gh".to_string(),
-            },
-        }
+    let github = raw.github.map(|g| GitHubSourceConfig {
+        enabled: g.enabled,
+        weight: g.weight,
+        config: GitHubConfig {
+            orgs: g.orgs,
+            repos: g.repos,
+            max_results: g.max_results,
+            gh_path: "gh".to_string(),
+        },
     });
 
     let config = SourcesConfig {
@@ -403,7 +402,10 @@ fn validate_url_security(url: &str, source_name: &str) -> Result<(), SearchError
     Ok(())
 }
 
-fn validate_enabled_sources(sources: &SourcesConfig, missing: &[String]) -> Result<(), SearchError> {
+fn validate_enabled_sources(
+    sources: &SourcesConfig,
+    missing: &[String],
+) -> Result<(), SearchError> {
     // Validate HTTPS for enabled sources with base_url fields
     if let Some(jira) = &sources.jira {
         if jira.enabled {
@@ -428,16 +430,27 @@ fn validate_enabled_sources(sources: &SourcesConfig, missing: &[String]) -> Resu
     // Check if any missing env var belongs to an enabled source
     // For each missing var, check if the source that uses it is enabled
     for var in missing.iter() {
-        let is_slack_var = sources.slack.as_ref()
-            .map_or(false, |s| s.enabled && s.config.user_token.is_empty());
-        let is_confluence_var = sources.confluence.as_ref()
-            .map_or(false, |c| c.enabled && (c.config.base_url.is_empty() || c.config.api_token.is_empty() || c.config.email.is_empty()));
-        let is_jira_var = sources.jira.as_ref()
-            .map_or(false, |j| j.enabled && (j.config.base_url.is_empty() || j.config.api_token.is_empty() || j.config.email.is_empty()));
+        let is_slack_var = sources
+            .slack
+            .as_ref()
+            .is_some_and(|s| s.enabled && s.config.user_token.is_empty());
+        let is_confluence_var = sources.confluence.as_ref().is_some_and(|c| {
+            c.enabled
+                && (c.config.base_url.is_empty()
+                    || c.config.api_token.is_empty()
+                    || c.config.email.is_empty())
+        });
+        let is_jira_var = sources.jira.as_ref().is_some_and(|j| {
+            j.enabled
+                && (j.config.base_url.is_empty()
+                    || j.config.api_token.is_empty()
+                    || j.config.email.is_empty())
+        });
 
         if is_slack_var || is_confluence_var || is_jira_var {
             return Err(SearchError::Config(format!(
-                "Environment variable '{}' is not set (referenced in config)", var
+                "Environment variable '{}' is not set (referenced in config)",
+                var
             )));
         }
     }

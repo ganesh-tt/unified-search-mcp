@@ -34,7 +34,9 @@ async fn main() {
     if help {
         eprintln!("unified-search-mcp v{}", env!("CARGO_PKG_VERSION"));
         eprintln!();
-        eprintln!("A unified MCP search server for Slack, Confluence, JIRA, GitHub, and local files.");
+        eprintln!(
+            "A unified MCP search server for Slack, Confluence, JIRA, GitHub, and local files."
+        );
         eprintln!();
         eprintln!("USAGE:");
         eprintln!("  unified-search-mcp [OPTIONS]");
@@ -78,14 +80,22 @@ async fn main() {
                 unified_search_mcp::stats::run_stats("~/.unified-search/metrics.jsonl", stats_days);
                 return;
             }
-            eprintln!("Warning: Could not load config from '{}': {}", config_path, e);
-            eprintln!("Starting with no sources configured. Create a config.yaml to enable sources.");
+            eprintln!(
+                "Warning: Could not load config from '{}': {}",
+                config_path, e
+            );
+            eprintln!(
+                "Starting with no sources configured. Create a config.yaml to enable sources."
+            );
             eprintln!("See config.example.yaml for a template.");
 
             // Build a server with no sources and serve via MCP
             let orchestrator = SearchOrchestrator::new(vec![], OrchestratorConfig::default(), 0);
             let server = UnifiedSearchServer::new(orchestrator, None, None, None, None, None);
-            eprintln!("unified-search-mcp v{} -- 0 source(s) ready (no config loaded)", env!("CARGO_PKG_VERSION"));
+            eprintln!(
+                "unified-search-mcp v{} -- 0 source(s) ready (no config loaded)",
+                env!("CARGO_PKG_VERSION")
+            );
             mcp::serve_stdio(server).await;
             return;
         }
@@ -119,8 +129,14 @@ async fn main() {
         if slack_cfg.enabled {
             let client = SlackSource::build_client();
             source_weights.insert("slack".to_string(), slack_cfg.weight);
-            sources.push(Box::new(SlackSource::new_with_client(slack_cfg.config.clone(), client.clone())));
-            slack_detail = Some(SlackSource::new_with_client(slack_cfg.config.clone(), client));
+            sources.push(Box::new(SlackSource::new_with_client(
+                slack_cfg.config.clone(),
+                client.clone(),
+            )));
+            slack_detail = Some(SlackSource::new_with_client(
+                slack_cfg.config.clone(),
+                client,
+            ));
         }
     }
 
@@ -128,8 +144,14 @@ async fn main() {
         if confluence_cfg.enabled {
             let client = ConfluenceSource::build_client();
             source_weights.insert("confluence".to_string(), confluence_cfg.weight);
-            sources.push(Box::new(ConfluenceSource::new_with_client(confluence_cfg.config.clone(), client.clone())));
-            confluence_detail = Some(ConfluenceSource::new_with_client(confluence_cfg.config.clone(), client));
+            sources.push(Box::new(ConfluenceSource::new_with_client(
+                confluence_cfg.config.clone(),
+                client.clone(),
+            )));
+            confluence_detail = Some(ConfluenceSource::new_with_client(
+                confluence_cfg.config.clone(),
+                client,
+            ));
         }
     }
 
@@ -137,7 +159,10 @@ async fn main() {
         if jira_cfg.enabled {
             let client = JiraSource::build_client();
             source_weights.insert("jira".to_string(), jira_cfg.weight);
-            sources.push(Box::new(JiraSource::new_with_client(jira_cfg.config.clone(), client.clone())));
+            sources.push(Box::new(JiraSource::new_with_client(
+                jira_cfg.config.clone(),
+                client.clone(),
+            )));
             jira_detail = Some(JiraSource::new_with_client(jira_cfg.config.clone(), client));
         }
     }
@@ -173,16 +198,29 @@ async fn main() {
     };
 
     let metrics_path = shellexpand::tilde(&app_config.server.metrics_path).to_string();
-    let metrics = unified_search_mcp::metrics::MetricsLogger::new(std::path::PathBuf::from(metrics_path));
+    let metrics =
+        unified_search_mcp::metrics::MetricsLogger::new(std::path::PathBuf::from(metrics_path));
 
-    let orchestrator = SearchOrchestrator::new(sources, orchestrator_config, app_config.server.cache_ttl_seconds);
-    let server = UnifiedSearchServer::new(orchestrator, jira_detail, confluence_detail, slack_detail, github_detail, Some(metrics));
+    let orchestrator = SearchOrchestrator::new(
+        sources,
+        orchestrator_config,
+        app_config.server.cache_ttl_seconds,
+    );
+    let server = UnifiedSearchServer::new(
+        orchestrator,
+        jira_detail,
+        confluence_detail,
+        slack_detail,
+        github_detail,
+        Some(metrics),
+    );
 
     // Stdout is now the MCP JSON-RPC channel -- all diagnostics go to stderr
     eprintln!(
         "unified-search-mcp v{} -- {} source(s) ready: {}",
         env!("CARGO_PKG_VERSION"),
-        source_count, app_config.server.name,
+        source_count,
+        app_config.server.name,
     );
 
     mcp::serve_stdio(server).await;

@@ -1,12 +1,12 @@
+use crate::models::{SearchError, SearchQuery, SearchResult, SourceHealth};
 use async_trait::async_trait;
-use crate::models::{SearchQuery, SearchResult, SearchError, SourceHealth};
 
-pub mod slack;
 pub mod confluence;
-pub mod jira;
-pub mod local_text;
 pub mod confluence_markdown;
 pub mod github;
+pub mod jira;
+pub mod local_text;
+pub mod slack;
 // pub mod local_vector; // Phase 2
 
 #[async_trait]

@@ -10,7 +10,10 @@ fn converts_headings() {
 #[test]
 fn converts_paragraphs() {
     assert_eq!(to_markdown("<p>Hello world</p>"), "Hello world\n\n");
-    assert_eq!(to_markdown("<p>First</p><p>Second</p>"), "First\n\nSecond\n\n");
+    assert_eq!(
+        to_markdown("<p>First</p><p>Second</p>"),
+        "First\n\nSecond\n\n"
+    );
 }
 
 #[test]
@@ -66,17 +69,34 @@ fn converts_code_block() {
 fn converts_confluence_code_macro() {
     let html = r#"<ac:structured-macro ac:name="code"><ac:parameter ac:name="language">rust</ac:parameter><ac:plain-text-body><![CDATA[fn main() {}]]></ac:plain-text-body></ac:structured-macro>"#;
     let result = to_markdown(html);
-    assert!(result.contains("```rust"), "Should have language hint, got: {}", result);
+    assert!(
+        result.contains("```rust"),
+        "Should have language hint, got: {}",
+        result
+    );
     assert!(result.contains("fn main() {}"), "Should have code content");
 }
 
 #[test]
 fn converts_table() {
-    let html = "<table><tr><th>Name</th><th>Age</th></tr><tr><td>Alice</td><td>30</td></tr></table>";
+    let html =
+        "<table><tr><th>Name</th><th>Age</th></tr><tr><td>Alice</td><td>30</td></tr></table>";
     let result = to_markdown(html);
-    assert!(result.contains("| Name | Age |"), "Should have header row, got: {}", result);
-    assert!(result.contains("|---|---|"), "Should have separator, got: {}", result);
-    assert!(result.contains("| Alice | 30 |"), "Should have data row, got: {}", result);
+    assert!(
+        result.contains("| Name | Age |"),
+        "Should have header row, got: {}",
+        result
+    );
+    assert!(
+        result.contains("|---|---|"),
+        "Should have separator, got: {}",
+        result
+    );
+    assert!(
+        result.contains("| Alice | 30 |"),
+        "Should have data row, got: {}",
+        result
+    );
 }
 
 #[test]
@@ -91,7 +111,11 @@ fn converts_image() {
 fn converts_info_macro() {
     let html = r#"<ac:structured-macro ac:name="info"><ac:rich-text-body><p>Important note</p></ac:rich-text-body></ac:structured-macro>"#;
     let result = to_markdown(html);
-    assert!(result.contains("> **Info:**"), "Should have info blockquote, got: {}", result);
+    assert!(
+        result.contains("> **Info:**"),
+        "Should have info blockquote, got: {}",
+        result
+    );
     assert!(result.contains("Important note"), "Should have content");
 }
 
@@ -99,7 +123,11 @@ fn converts_info_macro() {
 fn converts_warning_macro() {
     let html = r#"<ac:structured-macro ac:name="warning"><ac:rich-text-body><p>Be careful</p></ac:rich-text-body></ac:structured-macro>"#;
     let result = to_markdown(html);
-    assert!(result.contains("> **Warning:**"), "Should have warning blockquote, got: {}", result);
+    assert!(
+        result.contains("> **Warning:**"),
+        "Should have warning blockquote, got: {}",
+        result
+    );
 }
 
 #[test]
@@ -135,7 +163,11 @@ fn converts_strikethrough() {
 fn converts_expand_macro() {
     let html = r#"<ac:structured-macro ac:name="expand"><ac:parameter ac:name="title">Details</ac:parameter><ac:rich-text-body><p>Hidden content</p></ac:rich-text-body></ac:structured-macro>"#;
     let result = to_markdown(html);
-    assert!(result.contains("<details>"), "Should use details tag, got: {}", result);
+    assert!(
+        result.contains("<details>"),
+        "Should use details tag, got: {}",
+        result
+    );
     assert!(result.contains("Details"), "Should have summary title");
     assert!(result.contains("Hidden content"), "Should have body");
 }

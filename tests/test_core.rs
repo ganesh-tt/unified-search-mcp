@@ -220,11 +220,7 @@ async fn single_source_happy_path() {
     ];
 
     let source = MockSource::new("slack", results);
-    let orchestrator = SearchOrchestrator::new(
-        vec![boxed(source)],
-        default_config(),
-        0,
-    );
+    let orchestrator = SearchOrchestrator::new(vec![boxed(source)], default_config(), 0);
 
     let response = orchestrator.search(&query("hello"), false).await;
 
@@ -260,10 +256,7 @@ async fn multiple_sources_merged() {
             make_result("confluence", "c3", 0.4),
         ],
     );
-    let source_c = MockSource::new(
-        "jira",
-        vec![make_result("jira", "j1", 0.7)],
-    );
+    let source_c = MockSource::new("jira", vec![make_result("jira", "j1", 0.7)]);
 
     let orchestrator = SearchOrchestrator::new(
         vec![boxed(source_a), boxed(source_b), boxed(source_c)],
@@ -299,15 +292,9 @@ async fn multiple_sources_merged() {
 /// returned, warning about timeout, total time < 3s.
 #[tokio::test]
 async fn source_timeout_returns_partial() {
-    let fast_source = MockSource::new(
-        "fast",
-        vec![make_result("fast", "quick_result", 0.9)],
-    );
-    let slow_source = MockSource::new(
-        "slow",
-        vec![make_result("slow", "slow_result", 0.8)],
-    )
-    .with_delay(Duration::from_secs(30));
+    let fast_source = MockSource::new("fast", vec![make_result("fast", "quick_result", 0.9)]);
+    let slow_source = MockSource::new("slow", vec![make_result("slow", "slow_result", 0.8)])
+        .with_delay(Duration::from_secs(30));
 
     let config = OrchestratorConfig {
         timeout_seconds: 2,
@@ -315,11 +302,8 @@ async fn source_timeout_returns_partial() {
         max_results: 50,
     };
 
-    let orchestrator = SearchOrchestrator::new(
-        vec![boxed(fast_source), boxed(slow_source)],
-        config,
-        0,
-    );
+    let orchestrator =
+        SearchOrchestrator::new(vec![boxed(fast_source), boxed(slow_source)], config, 0);
 
     let start = Instant::now();
     let response = orchestrator.search(&query("test"), false).await;
@@ -375,8 +359,7 @@ async fn source_error_returns_partial() {
             make_result("working", "good2", 0.6),
         ],
     );
-    let err_source = MockSource::new("broken", vec![])
-        .with_error("connection refused");
+    let err_source = MockSource::new("broken", vec![]).with_error("connection refused");
 
     let orchestrator = SearchOrchestrator::new(
         vec![boxed(ok_source), boxed(err_source)],
@@ -387,7 +370,11 @@ async fn source_error_returns_partial() {
     let response = orchestrator.search(&query("test"), false).await;
 
     // Should have results from the working source
-    assert_eq!(response.results.len(), 2, "Expected 2 results from ok source");
+    assert_eq!(
+        response.results.len(),
+        2,
+        "Expected 2 results from ok source"
+    );
     assert!(
         response.results.iter().all(|r| r.source == "working"),
         "All results should be from the working source"
@@ -399,8 +386,8 @@ async fn source_error_returns_partial() {
         "Expected at least one warning about the failed source"
     );
     let warnings_joined = response.warnings.join(" ");
-    let has_error_warning =
-        warnings_joined.contains("connection refused") || warnings_joined.to_lowercase().contains("broken");
+    let has_error_warning = warnings_joined.contains("connection refused")
+        || warnings_joined.to_lowercase().contains("broken");
     assert!(
         has_error_warning,
         "Expected a warning about the connection refused error, got: {:?}",
@@ -415,10 +402,8 @@ async fn source_error_returns_partial() {
 /// Two ErrorSources -> 0 results, 2 warnings.
 #[tokio::test]
 async fn all_sources_fail() {
-    let err_source_a = MockSource::new("source_a", vec![])
-        .with_error("timeout");
-    let err_source_b = MockSource::new("source_b", vec![])
-        .with_error("auth failure");
+    let err_source_a = MockSource::new("source_a", vec![]).with_error("timeout");
+    let err_source_b = MockSource::new("source_b", vec![]).with_error("auth failure");
 
     let orchestrator = SearchOrchestrator::new(
         vec![boxed(err_source_a), boxed(err_source_b)],
@@ -428,7 +413,11 @@ async fn all_sources_fail() {
 
     let response = orchestrator.search(&query("test"), false).await;
 
-    assert_eq!(response.results.len(), 0, "Expected 0 results when all sources fail");
+    assert_eq!(
+        response.results.len(),
+        0,
+        "Expected 0 results when all sources fail"
+    );
     assert_eq!(
         response.warnings.len(),
         2,
@@ -450,10 +439,7 @@ async fn source_weights_affect_ranking() {
         "source_a",
         vec![make_result("source_a", "weighted_high", 0.5)],
     );
-    let source_b = MockSource::new(
-        "source_b",
-        vec![make_result("source_b", "raw_high", 0.8)],
-    );
+    let source_b = MockSource::new("source_b", vec![make_result("source_b", "raw_high", 0.8)]);
 
     let mut weights = HashMap::new();
     weights.insert("source_a".to_string(), 2.0f32);
@@ -465,11 +451,7 @@ async fn source_weights_affect_ranking() {
         max_results: 50,
     };
 
-    let orchestrator = SearchOrchestrator::new(
-        vec![boxed(source_a), boxed(source_b)],
-        config,
-        0,
-    );
+    let orchestrator = SearchOrchestrator::new(vec![boxed(source_a), boxed(source_b)], config, 0);
 
     let response = orchestrator.search(&query("test"), false).await;
 
@@ -477,10 +459,15 @@ async fn source_weights_affect_ranking() {
 
     // source_a's result (weighted 1.0) should rank above source_b's (weighted 0.8)
     assert_eq!(
-        response.results[0].source, "source_a",
+        response.results[0].source,
+        "source_a",
         "source_a (weighted score 1.0) should rank first, but got source={}, results={:?}",
         response.results[0].source,
-        response.results.iter().map(|r| (&r.source, r.relevance)).collect::<Vec<_>>()
+        response
+            .results
+            .iter()
+            .map(|r| (&r.source, r.relevance))
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         response.results[1].source, "source_b",
@@ -500,18 +487,17 @@ async fn dedup_by_url() {
 
     let source_a = MockSource::new(
         "source_a",
-        vec![make_result_with_url("source_a", "high_rel", 0.9, shared_url)],
+        vec![make_result_with_url(
+            "source_a", "high_rel", 0.9, shared_url,
+        )],
     );
     let source_b = MockSource::new(
         "source_b",
         vec![make_result_with_url("source_b", "low_rel", 0.5, shared_url)],
     );
 
-    let orchestrator = SearchOrchestrator::new(
-        vec![boxed(source_a), boxed(source_b)],
-        default_config(),
-        0,
-    );
+    let orchestrator =
+        SearchOrchestrator::new(vec![boxed(source_a), boxed(source_b)], default_config(), 0);
 
     let response = orchestrator.search(&query("test"), false).await;
 
@@ -549,27 +535,18 @@ async fn dedup_by_snippet_prefix() {
     let source_a = MockSource::new(
         "source_a",
         vec![make_result_with_snippet(
-            "source_a",
-            "doc_a",
-            0.9,
-            &snippet_a,
+            "source_a", "doc_a", 0.9, &snippet_a,
         )],
     );
     let source_b = MockSource::new(
         "source_b",
         vec![make_result_with_snippet(
-            "source_b",
-            "doc_b",
-            0.5,
-            &snippet_b,
+            "source_b", "doc_b", 0.5, &snippet_b,
         )],
     );
 
-    let orchestrator = SearchOrchestrator::new(
-        vec![boxed(source_a), boxed(source_b)],
-        default_config(),
-        0,
-    );
+    let orchestrator =
+        SearchOrchestrator::new(vec![boxed(source_a), boxed(source_b)], default_config(), 0);
 
     let response = orchestrator.search(&query("test"), false).await;
 
@@ -611,11 +588,7 @@ async fn max_results_truncation() {
         max_results: 20,
     };
 
-    let orchestrator = SearchOrchestrator::new(
-        vec![boxed(source_a), boxed(source_b)],
-        config,
-        0,
-    );
+    let orchestrator = SearchOrchestrator::new(vec![boxed(source_a), boxed(source_b)], config, 0);
 
     let q = SearchQuery {
         text: "test".to_string(),
@@ -641,21 +614,19 @@ async fn max_results_truncation() {
 /// -> only slack queried, total_sources_queried=1.
 #[tokio::test]
 async fn source_filter_in_query() {
-    let slack_source = MockSource::new(
-        "slack",
-        vec![make_result("slack", "slack_msg", 0.9)],
-    );
+    let slack_source = MockSource::new("slack", vec![make_result("slack", "slack_msg", 0.9)]);
     let confluence_source = MockSource::new(
         "confluence",
         vec![make_result("confluence", "conf_page", 0.8)],
     );
-    let jira_source = MockSource::new(
-        "jira",
-        vec![make_result("jira", "jira_ticket", 0.7)],
-    );
+    let jira_source = MockSource::new("jira", vec![make_result("jira", "jira_ticket", 0.7)]);
 
     let orchestrator = SearchOrchestrator::new(
-        vec![boxed(slack_source), boxed(confluence_source), boxed(jira_source)],
+        vec![
+            boxed(slack_source),
+            boxed(confluence_source),
+            boxed(jira_source),
+        ],
         default_config(),
         0,
     );
@@ -743,7 +714,11 @@ async fn empty_sources_list() {
 
     let response = orchestrator.search(&query("anything"), false).await;
 
-    assert_eq!(response.results.len(), 0, "Expected 0 results with no sources");
+    assert_eq!(
+        response.results.len(),
+        0,
+        "Expected 0 results with no sources"
+    );
     assert!(
         response.warnings.is_empty(),
         "Expected 0 warnings with no sources, got: {:?}",
@@ -761,10 +736,7 @@ async fn empty_sources_list() {
 
 #[tokio::test]
 async fn per_source_stats_populated() {
-    let source_a = MockSource::new(
-        "slack",
-        vec![make_result("slack", "msg1", 0.9)],
-    );
+    let source_a = MockSource::new("slack", vec![make_result("slack", "msg1", 0.9)]);
     let source_b = MockSource::new(
         "jira",
         vec![
@@ -773,24 +745,30 @@ async fn per_source_stats_populated() {
         ],
     );
 
-    let orchestrator = SearchOrchestrator::new(
-        vec![boxed(source_a), boxed(source_b)],
-        default_config(),
-        0,
-    );
+    let orchestrator =
+        SearchOrchestrator::new(vec![boxed(source_a), boxed(source_b)], default_config(), 0);
 
     let response = orchestrator.search(&query("test"), false).await;
 
     assert_eq!(
-        response.per_source_stats.len(), 2,
+        response.per_source_stats.len(),
+        2,
         "Expected 2 per-source stats entries"
     );
 
-    let slack_stats = response.per_source_stats.iter().find(|s| s.source == "slack").unwrap();
+    let slack_stats = response
+        .per_source_stats
+        .iter()
+        .find(|s| s.source == "slack")
+        .unwrap();
     assert_eq!(slack_stats.result_count, 1);
     assert!(slack_stats.error.is_none());
 
-    let jira_stats = response.per_source_stats.iter().find(|s| s.source == "jira").unwrap();
+    let jira_stats = response
+        .per_source_stats
+        .iter()
+        .find(|s| s.source == "jira")
+        .unwrap();
     assert_eq!(jira_stats.result_count, 2);
 }
 

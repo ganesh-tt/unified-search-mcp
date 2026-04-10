@@ -163,7 +163,6 @@ struct ConfluencePageLinks {
     base: Option<String>,
 }
 
-
 impl ConfluenceSource {
     pub fn new(config: ConfluenceConfig) -> Self {
         let client = Self::build_client();
@@ -173,7 +172,11 @@ impl ConfluenceSource {
     /// Create with a shared reqwest::Client (avoids duplicate connection pools).
     pub fn new_with_client(config: ConfluenceConfig, client: Client) -> Self {
         let html_tag_re = Regex::new(r"<[^>]+>").expect("Invalid HTML tag regex");
-        Self { config, client, html_tag_re }
+        Self {
+            config,
+            client,
+            html_tag_re,
+        }
     }
 
     /// Build the default HTTP client for Confluence.
@@ -225,7 +228,6 @@ impl ConfluenceSource {
     fn strip_html(&self, html: &str) -> String {
         self.html_tag_re.replace_all(html, "").to_string()
     }
-
 }
 
 // Confluence API response types (v1)
@@ -401,10 +403,7 @@ impl SearchSource for ConfluenceSource {
                     .and_then(|c| c.title.clone())
                     .unwrap_or_default();
 
-                let snippet = r
-                    .excerpt
-                    .map(|e| self.strip_html(&e))
-                    .unwrap_or_default();
+                let snippet = r.excerpt.map(|e| self.strip_html(&e)).unwrap_or_default();
 
                 let full_url = r.url.map(|u| {
                     if u.starts_with("http") {
@@ -570,7 +569,12 @@ impl ConfluenceSource {
             .metadata
             .as_ref()
             .and_then(|m| m.labels.as_ref())
-            .map(|lc| lc.results.iter().filter_map(|l| l.name.as_deref()).collect())
+            .map(|lc| {
+                lc.results
+                    .iter()
+                    .filter_map(|l| l.name.as_deref())
+                    .collect()
+            })
             .unwrap_or_default();
         let labels_str = labels.join(", ");
 
@@ -760,10 +764,7 @@ impl ConfluenceSource {
                         None => return None,
                     };
 
-                    let url = format!(
-                        "{}/wiki/rest/api/content/{}/child/comment",
-                        base_url, id
-                    );
+                    let url = format!("{}/wiki/rest/api/content/{}/child/comment", base_url, id);
 
                     let page_id_for_log = id.clone();
                     let fetch = async {
@@ -799,10 +800,7 @@ impl ConfluenceSource {
             })
             .collect();
 
-        let comment_batches: Vec<_> = stream::iter(futures)
-            .buffered(5)
-            .collect()
-            .await;
+        let comment_batches: Vec<_> = stream::iter(futures).buffered(5).collect().await;
 
         for (result, comments_opt) in results.iter_mut().zip(comment_batches.into_iter()) {
             match comments_opt {
@@ -813,8 +811,7 @@ impl ConfluenceSource {
                         .insert("comment_count".to_string(), count.to_string());
 
                     if count > 0 {
-                        let mut snippet_addition =
-                            format!("\n---\nComments ({} total):", count);
+                        let mut snippet_addition = format!("\n---\nComments ({} total):", count);
 
                         for comment in comments.iter().rev().take(3) {
                             let author = comment
@@ -847,10 +844,8 @@ impl ConfluenceSource {
                                 body_text.to_string()
                             };
 
-                            snippet_addition.push_str(&format!(
-                                "\n[{}, {}]: {}",
-                                author, date, body_truncated
-                            ));
+                            snippet_addition
+                                .push_str(&format!("\n[{}, {}]: {}", author, date, body_truncated));
                         }
 
                         result.snippet.push_str(&snippet_addition);

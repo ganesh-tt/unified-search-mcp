@@ -7,9 +7,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::models::{
-    HealthStatus, SearchError, SearchQuery, SearchResult, SourceHealth,
-};
+use crate::models::{HealthStatus, SearchError, SearchQuery, SearchResult, SourceHealth};
 use crate::sources::SearchSource;
 
 // ===========================================================================
@@ -49,10 +47,7 @@ impl LocalTextSource {
     }
 
     /// Try ripgrep first; fall back to grep-regex + walkdir if rg is not found.
-    async fn do_search(
-        &self,
-        query: &SearchQuery,
-    ) -> Result<Vec<SearchResult>, SearchError> {
+    async fn do_search(&self, query: &SearchQuery) -> Result<Vec<SearchResult>, SearchError> {
         let text = query.text.trim();
         if text.is_empty() {
             return Ok(vec![]);
@@ -74,26 +69,33 @@ impl LocalTextSource {
         // Escape regex special chars so the query is treated as literal text.
         let escaped_query = regex::escape(text);
 
-        match self.search_with_ripgrep(&escaped_query, &valid_paths, query).await {
+        match self
+            .search_with_ripgrep(&escaped_query, &valid_paths, query)
+            .await
+        {
             Ok(results) => Ok(results),
             Err(_) => {
                 // Ripgrep not available — use sync fallback on blocking thread
                 // to avoid stalling the tokio async runtime.
                 let escaped = escaped_query.clone();
-                let owned_paths: Vec<std::path::PathBuf> = valid_paths.iter().map(|p| p.to_path_buf()).collect();
+                let owned_paths: Vec<std::path::PathBuf> =
+                    valid_paths.iter().map(|p| p.to_path_buf()).collect();
                 let query_clone = query.clone();
                 let config = self.config.clone();
 
                 tokio::task::spawn_blocking(move || {
                     let source = LocalTextSource::new(config);
-                    let path_refs: Vec<&std::path::Path> = owned_paths.iter().map(|p| p.as_path()).collect();
+                    let path_refs: Vec<&std::path::Path> =
+                        owned_paths.iter().map(|p| p.as_path()).collect();
                     source.search_with_fallback(&escaped, &path_refs, &query_clone)
                 })
                 .await
-                .unwrap_or_else(|e| Err(SearchError::Source {
-                    source_name: "local_text".to_string(),
-                    message: format!("Fallback search task panicked: {e}"),
-                }))
+                .unwrap_or_else(|e| {
+                    Err(SearchError::Source {
+                        source_name: "local_text".to_string(),
+                        message: format!("Fallback search task panicked: {e}"),
+                    })
+                })
             }
         }
     }
@@ -191,13 +193,13 @@ impl LocalTextSource {
                     .unwrap_or("")
                     .to_string();
 
-                let entry = file_matches.entry(path.clone()).or_insert_with(|| {
-                    FileMatch {
+                let entry = file_matches
+                    .entry(path.clone())
+                    .or_insert_with(|| FileMatch {
                         path: path.clone(),
                         match_count: 0,
                         snippet_lines: vec![],
-                    }
-                });
+                    });
                 entry.match_count += 1;
                 if entry.snippet_lines.len() < 10 {
                     entry.snippet_lines.push(line_text);
@@ -317,7 +319,7 @@ impl LocalTextSource {
 
         for base_path in paths {
             for entry in WalkDir::new(base_path)
-                .follow_links(false)  // security: prevent symlink traversal
+                .follow_links(false) // security: prevent symlink traversal
                 .into_iter()
                 .filter_map(|e| e.ok())
             {
@@ -338,9 +340,11 @@ impl LocalTextSource {
                 // Apply include patterns
                 if !self.config.include_patterns.is_empty() {
                     let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                    let matches_any = self.config.include_patterns.iter().any(|pat| {
-                        glob_match(pat, file_name, path)
-                    });
+                    let matches_any = self
+                        .config
+                        .include_patterns
+                        .iter()
+                        .any(|pat| glob_match(pat, file_name, path));
                     if !matches_any {
                         continue;
                     }
@@ -349,9 +353,11 @@ impl LocalTextSource {
                 // Apply exclude patterns
                 if !self.config.exclude_patterns.is_empty() {
                     let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                    let matches_any = self.config.exclude_patterns.iter().any(|pat| {
-                        glob_match(pat, file_name, path)
-                    });
+                    let matches_any = self
+                        .config
+                        .exclude_patterns
+                        .iter()
+                        .any(|pat| glob_match(pat, file_name, path));
                     if matches_any {
                         continue;
                     }
@@ -360,13 +366,13 @@ impl LocalTextSource {
                 // Search the file
                 let mut searcher = Searcher::new();
                 let canonical = path.to_path_buf();
-                let fm = file_matches.entry(canonical.clone()).or_insert_with(|| {
-                    FileMatch {
+                let fm = file_matches
+                    .entry(canonical.clone())
+                    .or_insert_with(|| FileMatch {
                         path: canonical.clone(),
                         match_count: 0,
                         snippet_lines: vec![],
-                    }
-                });
+                    });
 
                 let fm_count = &mut fm.match_count;
                 let fm_snippets = &mut fm.snippet_lines;
@@ -384,7 +390,10 @@ impl LocalTextSource {
                 );
 
                 // Remove entry if no matches
-                if file_matches.get(&canonical).map_or(true, |fm| fm.match_count == 0) {
+                if file_matches
+                    .get(&canonical)
+                    .map_or(true, |fm| fm.match_count == 0)
+                {
                     file_matches.remove(&canonical);
                 }
             }

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 use unified_search_mcp::cache::ResponseCache;
-use unified_search_mcp::models::{SearchResult, UnifiedSearchResponse, PerSourceStats};
+use unified_search_mcp::models::{PerSourceStats, SearchResult, UnifiedSearchResponse};
 
 fn make_response(n_results: usize) -> UnifiedSearchResponse {
     UnifiedSearchResponse {
@@ -40,7 +40,10 @@ fn cache_key_normalized() {
     let mut cache = ResponseCache::new(100, Duration::from_secs(300));
     cache.put("Test Query", &["slack", "jira"], 20, make_response(1));
     let cached = cache.get("test query", &["jira", "slack"], 20);
-    assert!(cached.is_some(), "Should be case-insensitive and source-order-independent");
+    assert!(
+        cached.is_some(),
+        "Should be case-insensitive and source-order-independent"
+    );
 }
 
 #[test]
@@ -86,7 +89,10 @@ fn cache_hit_flag_set() {
     let mut cache = ResponseCache::new(100, Duration::from_secs(300));
     cache.put("query", &["slack"], 20, make_response(1));
     let cached = cache.get("query", &["slack"], 20).unwrap();
-    assert!(cached.cache_hit, "Cached response should have cache_hit=true");
+    assert!(
+        cached.cache_hit,
+        "Cached response should have cache_hit=true"
+    );
 }
 
 #[test]

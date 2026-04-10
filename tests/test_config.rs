@@ -30,7 +30,10 @@ fn valid_full_config_parses() {
     assert!((slack.weight - 1.0).abs() < f32::EPSILON);
 
     // Confluence
-    let conf = cfg.sources.confluence.expect("confluence should be present");
+    let conf = cfg
+        .sources
+        .confluence
+        .expect("confluence should be present");
     assert!(conf.enabled);
     assert_eq!(conf.config.base_url, "https://test.atlassian.net");
     assert_eq!(conf.config.email, "test@example.com");
@@ -45,7 +48,10 @@ fn valid_full_config_parses() {
     assert_eq!(jira.config.projects, vec!["FIN"]);
 
     // Local text
-    let lt = cfg.sources.local_text.expect("local_text should be present");
+    let lt = cfg
+        .sources
+        .local_text
+        .expect("local_text should be present");
     assert!(lt.enabled);
     // Path should be tilde-expanded (not start with ~)
     assert!(!lt.config.paths.is_empty());
@@ -65,7 +71,14 @@ fn minimal_config_parses() {
     assert!(cfg.sources.local_text.is_some());
     let lt = cfg.sources.local_text.unwrap();
     assert!(lt.enabled);
-    assert_eq!(lt.config.paths.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(), vec!["/tmp/test"]);
+    assert_eq!(
+        lt.config
+            .paths
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>(),
+        vec!["/tmp/test"]
+    );
 
     // Other sources should be None
     assert!(cfg.sources.slack.is_none());
@@ -139,10 +152,7 @@ fn invalid_yaml_syntax() {
     match &result.unwrap_err() {
         SearchError::Config(msg) => {
             // Should contain some context about the parse failure
-            assert!(
-                !msg.is_empty(),
-                "error message should provide context"
-            );
+            assert!(!msg.is_empty(), "error message should provide context");
         }
         other => panic!("expected SearchError::Config, got: {:?}", other),
     }
@@ -208,7 +218,10 @@ sources:
     write!(tmp, "{}", yaml).unwrap();
 
     let cfg = config::load(tmp.path().to_str().unwrap()).expect("should parse");
-    let lt = cfg.sources.local_text.expect("local_text should be present");
+    let lt = cfg
+        .sources
+        .local_text
+        .expect("local_text should be present");
 
     let first_path = lt.config.paths[0].display().to_string();
     // Should NOT start with ~ — it should be expanded to real home dir
@@ -252,9 +265,9 @@ sources:
 // ============================================================================
 #[test]
 fn debug_output_redacts_tokens() {
-    use unified_search_mcp::sources::slack::SlackConfig;
-    use unified_search_mcp::sources::jira::JiraConfig;
     use unified_search_mcp::sources::confluence::ConfluenceConfig;
+    use unified_search_mcp::sources::jira::JiraConfig;
+    use unified_search_mcp::sources::slack::SlackConfig;
 
     let slack = SlackConfig {
         user_token: "xoxp-secret-token-12345".to_string(),
@@ -361,7 +374,11 @@ sources:
     std::fs::write(&path, config_content).unwrap();
 
     let result = unified_search_mcp::config::load(path.to_str().unwrap());
-    assert!(result.is_ok(), "Should accept https:// base_url, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Should accept https:// base_url, got: {:?}",
+        result.err()
+    );
 }
 
 // ============================================================================
@@ -401,30 +418,32 @@ sources:
     let path_b = Arc::new(tmp_b.path().to_str().unwrap().to_string());
 
     // Run many concurrent pairs of loads to surface any race condition
-    let handles: Vec<_> = (0..16).map(|i| {
-        let pa = Arc::clone(&path_a);
-        let pb = Arc::clone(&path_b);
-        thread::spawn(move || {
-            if i % 2 == 0 {
-                // Config A should fail (missing env var for enabled slack)
-                let result_a = config::load(&pa);
-                assert!(
-                    result_a.is_err(),
-                    "thread {}: config A (missing slack token) should fail, got Ok",
-                    i
-                );
-            } else {
-                // Config B should succeed and must NOT see config A's missing vars
-                let result_b = config::load(&pb);
-                assert!(
-                    result_b.is_ok(),
-                    "thread {}: config B (local_text only) should succeed, got: {:?}",
-                    i,
-                    result_b.err()
-                );
-            }
+    let handles: Vec<_> = (0..16)
+        .map(|i| {
+            let pa = Arc::clone(&path_a);
+            let pb = Arc::clone(&path_b);
+            thread::spawn(move || {
+                if i % 2 == 0 {
+                    // Config A should fail (missing env var for enabled slack)
+                    let result_a = config::load(&pa);
+                    assert!(
+                        result_a.is_err(),
+                        "thread {}: config A (missing slack token) should fail, got Ok",
+                        i
+                    );
+                } else {
+                    // Config B should succeed and must NOT see config A's missing vars
+                    let result_b = config::load(&pb);
+                    assert!(
+                        result_b.is_ok(),
+                        "thread {}: config B (local_text only) should succeed, got: {:?}",
+                        i,
+                        result_b.err()
+                    );
+                }
+            })
         })
-    }).collect();
+        .collect();
 
     for h in handles {
         h.join().expect("thread panicked");

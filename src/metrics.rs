@@ -68,19 +68,28 @@ fn write_entry(path: &PathBuf, entry: &MetricsEntry) -> std::io::Result<()> {
     // Add timestamp to entry
     let mut json_value = serde_json::to_value(entry).unwrap_or(serde_json::Value::Null);
     if let Some(obj) = json_value.as_object_mut() {
-        obj.insert("ts".to_string(), serde_json::Value::String(Utc::now().to_rfc3339()));
+        obj.insert(
+            "ts".to_string(),
+            serde_json::Value::String(Utc::now().to_rfc3339()),
+        );
         // Truncate query text for privacy
         if let Some(q) = obj.get_mut("query") {
             if let Some(s) = q.as_str() {
                 if s.len() > 100 {
-                    *q = serde_json::Value::String(format!("{}...", s.chars().take(100).collect::<String>()));
+                    *q = serde_json::Value::String(format!(
+                        "{}...",
+                        s.chars().take(100).collect::<String>()
+                    ));
                 }
             }
         }
         if let Some(id) = obj.get_mut("identifier") {
             if let Some(s) = id.as_str() {
                 if s.len() > 100 {
-                    *id = serde_json::Value::String(format!("{}...", s.chars().take(100).collect::<String>()));
+                    *id = serde_json::Value::String(format!(
+                        "{}...",
+                        s.chars().take(100).collect::<String>()
+                    ));
                 }
             }
         }

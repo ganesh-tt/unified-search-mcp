@@ -6,12 +6,9 @@
 use std::sync::Arc;
 
 use rmcp::{
-    ServerHandler,
-    model::*,
-    schemars,
-    tool, tool_handler, tool_router,
     handler::server::{tool::ToolRouter, wrapper::Parameters},
-    ServiceExt as _,
+    model::*,
+    schemars, tool, tool_handler, tool_router, ServerHandler, ServiceExt as _,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -99,30 +96,40 @@ impl McpServer {
 
     /// Search across all enabled sources in parallel.
     /// Returns a ranked Markdown table of results.
-    #[tool(description = "Search across Slack messages, Confluence pages, JIRA tickets (including comments), GitHub PRs/issues/code, and local code/docs in parallel. Use this when looking for decisions, discussions, documentation, or code related to a topic. Also use instead of jira_get or conf_get for searching. Returns a ranked Markdown table with results from all sources. Example queries: 'broadcast threshold decision', 'auth middleware migration', 'FIN-10384 context'.")]
-    async fn unified_search(
-        &self,
-        Parameters(params): Parameters<UnifiedSearchParams>,
-    ) -> String {
+    #[tool(
+        description = "Search across Slack messages, Confluence pages, JIRA tickets (including comments), GitHub PRs/issues/code, and local code/docs in parallel. Use this when looking for decisions, discussions, documentation, or code related to a topic. Also use instead of jira_get or conf_get for searching. Returns a ranked Markdown table with results from all sources. Example queries: 'broadcast threshold decision', 'auth middleware migration', 'FIN-10384 context'."
+    )]
+    async fn unified_search(&self, Parameters(params): Parameters<UnifiedSearchParams>) -> String {
         self.server
-            .handle_unified_search(params.query, params.sources, params.max_results, params.no_cache.unwrap_or(false))
+            .handle_unified_search(
+                params.query,
+                params.sources,
+                params.max_results,
+                params.no_cache.unwrap_or(false),
+            )
             .await
     }
 
     /// Search a single named source.
     /// Returns results as a JSON array.
-    #[tool(description = "Search a single source by name: 'slack', 'confluence', 'jira', 'github', or 'local_text'. Use when you know which system has the answer. Returns detailed JSON results from that source only.")]
-    async fn search_source(
-        &self,
-        Parameters(params): Parameters<SearchSourceParams>,
-    ) -> String {
+    #[tool(
+        description = "Search a single source by name: 'slack', 'confluence', 'jira', 'github', or 'local_text'. Use when you know which system has the answer. Returns detailed JSON results from that source only."
+    )]
+    async fn search_source(&self, Parameters(params): Parameters<SearchSourceParams>) -> String {
         self.server
-            .handle_search_source(params.source, params.query, params.max_results, params.no_cache.unwrap_or(false))
+            .handle_search_source(
+                params.source,
+                params.query,
+                params.max_results,
+                params.no_cache.unwrap_or(false),
+            )
             .await
     }
 
     /// Search Confluence with comment previews included in each result.
-    #[tool(description = "Search Confluence pages AND include comment previews in each result. Slower than unified_search (extra API calls per result) but shows the latest 3 comments per page. Use when you need to see discussion context without calling get_detail on every result. Default max_results=10.")]
+    #[tool(
+        description = "Search Confluence pages AND include comment previews in each result. Slower than unified_search (extra API calls per result) but shows the latest 3 comments per page. Use when you need to see discussion context without calling get_detail on every result. Default max_results=10."
+    )]
     async fn search_confluence_comments(
         &self,
         Parameters(params): Parameters<EnrichedSearchParams>,
@@ -133,7 +140,9 @@ impl McpServer {
     }
 
     /// Search JIRA and fetch ALL comments for each matching ticket.
-    #[tool(description = "Search JIRA tickets AND fetch the full comment history for each result. Regular JIRA search only returns a few comments; this fetches ALL comments per ticket. Use when searching for something that might be discussed in JIRA comments rather than in ticket descriptions. Default max_results=10.")]
+    #[tool(
+        description = "Search JIRA tickets AND fetch the full comment history for each result. Regular JIRA search only returns a few comments; this fetches ALL comments per ticket. Use when searching for something that might be discussed in JIRA comments rather than in ticket descriptions. Default max_results=10."
+    )]
     async fn search_jira_comments(
         &self,
         Parameters(params): Parameters<EnrichedSearchParams>,
@@ -144,7 +153,9 @@ impl McpServer {
     }
 
     /// Search Slack and fetch full threads for each matching message.
-    #[tool(description = "Search Slack messages AND fetch the full conversation thread for each result. Regular Slack search returns single messages; this fetches the entire thread including all replies. Use when you need the full discussion context, not just the matching message. Default max_results=10.")]
+    #[tool(
+        description = "Search Slack messages AND fetch the full conversation thread for each result. Regular Slack search returns single messages; this fetches the entire thread including all replies. Use when you need the full discussion context, not just the matching message. Default max_results=10."
+    )]
     async fn search_slack_threads(
         &self,
         Parameters(params): Parameters<EnrichedSearchParams>,
@@ -155,17 +166,18 @@ impl McpServer {
     }
 
     /// List all configured sources with their health status.
-    #[tool(description = "Check which search sources are configured and whether they are healthy. Use to diagnose connection issues.")]
+    #[tool(
+        description = "Check which search sources are configured and whether they are healthy. Use to diagnose connection issues."
+    )]
     async fn list_sources(&self) -> String {
         self.server.handle_list_sources().await
     }
 
     /// Fetch full details for a specific item found via search.
-    #[tool(description = "Fetch full details for a specific JIRA ticket, Confluence page, Slack thread, or GitHub PR/issue. Accepts a JIRA key (FIN-1234), a JIRA/Confluence/Slack/GitHub URL. GitHub PR URLs (github.com/org/repo/pull/N) and issue URLs (github.com/org/repo/issues/N) are auto-detected; use source='github' with 'repo#N' shorthand. Returns full content: description, all comments, reviews, linked issues, subtasks, child pages, or thread replies depending on source.")]
-    async fn get_detail(
-        &self,
-        Parameters(params): Parameters<GetDetailParams>,
-    ) -> String {
+    #[tool(
+        description = "Fetch full details for a specific JIRA ticket, Confluence page, Slack thread, or GitHub PR/issue. Accepts a JIRA key (FIN-1234), a JIRA/Confluence/Slack/GitHub URL. GitHub PR URLs (github.com/org/repo/pull/N) and issue URLs (github.com/org/repo/issues/N) are auto-detected; use source='github' with 'repo#N' shorthand. Returns full content: description, all comments, reviews, linked issues, subtasks, child pages, or thread replies depending on source."
+    )]
+    async fn get_detail(&self, Parameters(params): Parameters<GetDetailParams>) -> String {
         self.server
             .handle_get_detail(params.identifier, params.source)
             .await

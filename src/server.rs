@@ -117,10 +117,7 @@ impl UnifiedSearchServer {
 
         for (i, result) in display_results.iter().enumerate() {
             let snippet = truncate_snippet(&result.snippet, 80);
-            let url = result
-                .url
-                .as_deref()
-                .unwrap_or("-");
+            let url = result.url.as_deref().unwrap_or("-");
             let _ = writeln!(
                 md,
                 "| {} | {} | {} | {} | {} |",
@@ -145,10 +142,22 @@ impl UnifiedSearchServer {
 
         // Footer: sources queried + time
         if !response.per_source_stats.is_empty() {
-            let parts: Vec<String> = response.per_source_stats.iter().map(|s| {
-                format!("{} ({}ms, {} results)", s.source, s.latency_ms, s.result_count)
-            }).collect();
-            let _ = write!(md, "**Sources**: {} | **Total**: {}ms", parts.join(" | "), response.query_time_ms);
+            let parts: Vec<String> = response
+                .per_source_stats
+                .iter()
+                .map(|s| {
+                    format!(
+                        "{} ({}ms, {} results)",
+                        s.source, s.latency_ms, s.result_count
+                    )
+                })
+                .collect();
+            let _ = write!(
+                md,
+                "**Sources**: {} | **Total**: {}ms",
+                parts.join(" | "),
+                response.query_time_ms
+            );
         } else {
             let _ = write!(
                 md,
@@ -292,10 +301,15 @@ impl UnifiedSearchServer {
         query: String,
         max_results: Option<usize>,
     ) -> String {
-        let start = std::time::Instant::now();
+        let _start = std::time::Instant::now();
         let max = max_results.unwrap_or(10);
 
-        match timeout(ENRICHED_SEARCH_TIMEOUT, self.do_search_confluence_comments(query, max)).await {
+        match timeout(
+            ENRICHED_SEARCH_TIMEOUT,
+            self.do_search_confluence_comments(query, max),
+        )
+        .await
+        {
             Ok(result) => result,
             Err(_) => format!(
                 "Error: search_confluence_comments timed out after {}s",
@@ -386,7 +400,12 @@ impl UnifiedSearchServer {
         query: String,
         max_results: Option<usize>,
     ) -> String {
-        match timeout(ENRICHED_SEARCH_TIMEOUT, self.do_search_jira_comments(query, max_results.unwrap_or(10))).await {
+        match timeout(
+            ENRICHED_SEARCH_TIMEOUT,
+            self.do_search_jira_comments(query, max_results.unwrap_or(10)),
+        )
+        .await
+        {
             Ok(result) => result,
             Err(_) => format!(
                 "Error: search_jira_comments timed out after {}s",
@@ -429,7 +448,11 @@ impl UnifiedSearchServer {
                         let mut md = String::new();
                         for (i, (result, detail_md)) in enriched.iter().enumerate() {
                             let url = result.url.as_deref().unwrap_or("-");
-                            let status = result.metadata.get("status").map(|s| s.as_str()).unwrap_or("?");
+                            let status = result
+                                .metadata
+                                .get("status")
+                                .map(|s| s.as_str())
+                                .unwrap_or("?");
                             let _ = writeln!(md, "## {}. {} [{}]", i + 1, result.title, status);
                             let _ = writeln!(md, "URL: {}\n", url);
 
@@ -466,7 +489,12 @@ impl UnifiedSearchServer {
         query: String,
         max_results: Option<usize>,
     ) -> String {
-        match timeout(ENRICHED_SEARCH_TIMEOUT, self.do_search_slack_threads(query, max_results.unwrap_or(10))).await {
+        match timeout(
+            ENRICHED_SEARCH_TIMEOUT,
+            self.do_search_slack_threads(query, max_results.unwrap_or(10)),
+        )
+        .await
+        {
             Ok(result) => result,
             Err(_) => format!(
                 "Error: search_slack_threads timed out after {}s",
@@ -509,7 +537,11 @@ impl UnifiedSearchServer {
                         let mut md = String::new();
                         for (i, (result, thread_md)) in enriched.iter().enumerate() {
                             let url = result.url.as_deref().unwrap_or("-");
-                            let channel = result.metadata.get("channel").map(|s| s.as_str()).unwrap_or("?");
+                            let channel = result
+                                .metadata
+                                .get("channel")
+                                .map(|s| s.as_str())
+                                .unwrap_or("?");
                             let _ = writeln!(md, "## {}. #{} — {}", i + 1, channel, result.title);
                             let _ = writeln!(md, "URL: {}\n", url);
 
@@ -545,11 +577,7 @@ impl UnifiedSearchServer {
     /// `identifier` can be a JIRA key, a JIRA/Confluence/Slack URL, or a
     /// Confluence page title. The source is auto-detected unless `source` is
     /// explicitly provided.
-    pub async fn handle_get_detail(
-        &self,
-        identifier: String,
-        source: Option<String>,
-    ) -> String {
+    pub async fn handle_get_detail(&self, identifier: String, source: Option<String>) -> String {
         let start = std::time::Instant::now();
 
         let detection = if let Some(ref src) = source {
@@ -683,21 +711,19 @@ impl UnifiedSearchServer {
                 }
             }
             SourceType::Confluence => match parsed {
-                ParsedIdentifier::ConfluencePageId(page_id) => {
-                    match &self.confluence_source {
-                        Some(src) => match src.get_detail_page(&page_id).await {
-                            Ok(md) => (md, None),
-                            Err(e) => {
-                                let msg = format!("Error: {}", e);
-                                (msg.clone(), Some(msg))
-                            }
-                        },
-                        None => {
-                            let msg = "Error: Confluence source not configured".to_string();
+                ParsedIdentifier::ConfluencePageId(page_id) => match &self.confluence_source {
+                    Some(src) => match src.get_detail_page(&page_id).await {
+                        Ok(md) => (md, None),
+                        Err(e) => {
+                            let msg = format!("Error: {}", e);
                             (msg.clone(), Some(msg))
                         }
+                    },
+                    None => {
+                        let msg = "Error: Confluence source not configured".to_string();
+                        (msg.clone(), Some(msg))
                     }
-                }
+                },
                 ParsedIdentifier::ConfluenceTitle { title, space } => {
                     let msg = format!(
                         "Error: Confluence title lookup not yet implemented. \
@@ -707,30 +733,26 @@ impl UnifiedSearchServer {
                     (msg.clone(), Some(msg))
                 }
                 _ => {
-                    let msg =
-                        "Error: unexpected parsed identifier for Confluence".to_string();
+                    let msg = "Error: unexpected parsed identifier for Confluence".to_string();
                     (msg.clone(), Some(msg))
                 }
             },
             SourceType::Slack => match parsed {
-                ParsedIdentifier::SlackPermalink { channel, ts } => {
-                    match &self.slack_source {
-                        Some(src) => match src.get_detail_thread(&channel, &ts).await {
-                            Ok(md) => (md, None),
-                            Err(e) => {
-                                let msg = format!("Error: {}", e);
-                                (msg.clone(), Some(msg))
-                            }
-                        },
-                        None => {
-                            let msg = "Error: Slack source not configured".to_string();
+                ParsedIdentifier::SlackPermalink { channel, ts } => match &self.slack_source {
+                    Some(src) => match src.get_detail_thread(&channel, &ts).await {
+                        Ok(md) => (md, None),
+                        Err(e) => {
+                            let msg = format!("Error: {}", e);
                             (msg.clone(), Some(msg))
                         }
+                    },
+                    None => {
+                        let msg = "Error: Slack source not configured".to_string();
+                        (msg.clone(), Some(msg))
                     }
-                }
+                },
                 _ => {
-                    let msg =
-                        "Error: unexpected parsed identifier for Slack".to_string();
+                    let msg = "Error: unexpected parsed identifier for Slack".to_string();
                     (msg.clone(), Some(msg))
                 }
             },
@@ -738,26 +760,31 @@ impl UnifiedSearchServer {
                 match &self.github_source {
                     Some(src) => {
                         match parsed {
-                            ParsedIdentifier::GitHubPR { owner, repo, number } => {
-                                match src.get_detail_pr(&owner, &repo, number).await {
-                                    Ok(md) => (md, None),
-                                    Err(e) => {
-                                        let msg = format!("Error: {}", e);
-                                        (msg.clone(), Some(msg))
-                                    }
+                            ParsedIdentifier::GitHubPR {
+                                owner,
+                                repo,
+                                number,
+                            } => match src.get_detail_pr(&owner, &repo, number).await {
+                                Ok(md) => (md, None),
+                                Err(e) => {
+                                    let msg = format!("Error: {}", e);
+                                    (msg.clone(), Some(msg))
                                 }
-                            }
-                            ParsedIdentifier::GitHubIssue { owner, repo, number } => {
-                                match src.get_detail_issue(&owner, &repo, number).await {
-                                    Ok(md) => (md, None),
-                                    Err(e) => {
-                                        let msg = format!("Error: {}", e);
-                                        (msg.clone(), Some(msg))
-                                    }
+                            },
+                            ParsedIdentifier::GitHubIssue {
+                                owner,
+                                repo,
+                                number,
+                            } => match src.get_detail_issue(&owner, &repo, number).await {
+                                Ok(md) => (md, None),
+                                Err(e) => {
+                                    let msg = format!("Error: {}", e);
+                                    (msg.clone(), Some(msg))
                                 }
-                            }
+                            },
                             ParsedIdentifier::GitHubShorthand { repo, number } => {
-                                let owner = src.default_org().unwrap_or_else(|| "unknown".to_string());
+                                let owner =
+                                    src.default_org().unwrap_or_else(|| "unknown".to_string());
                                 // Race PR and Issue lookups in parallel — whichever
                                 // succeeds first wins. Avoids 10-30s wasted on the
                                 // wrong type in sequential fallback.
@@ -773,7 +800,8 @@ impl UnifiedSearchServer {
                                 }
                             }
                             _ => {
-                                let msg = "Error: unexpected parsed identifier for GitHub".to_string();
+                                let msg =
+                                    "Error: unexpected parsed identifier for GitHub".to_string();
                                 (msg.clone(), Some(msg))
                             }
                         }
@@ -844,10 +872,8 @@ fn save_full_results(results: &[SearchResult]) -> String {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(
-                    &write_path,
-                    std::fs::Permissions::from_mode(0o600),
-                );
+                let _ =
+                    std::fs::set_permissions(&write_path, std::fs::Permissions::from_mode(0o600));
             }
         });
     }

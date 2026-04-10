@@ -1,9 +1,9 @@
-pub mod models;
 pub mod cache;
 pub mod config;
 pub mod core;
 pub mod mcp;
 pub mod metrics;
+pub mod models;
 pub mod resolve;
 pub mod server;
 pub mod sources;

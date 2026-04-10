@@ -1,5 +1,5 @@
 use tempfile::TempDir;
-use unified_search_mcp::metrics::{MetricsLogger, MetricsEntry};
+use unified_search_mcp::metrics::{MetricsEntry, MetricsLogger};
 
 #[tokio::test]
 async fn logs_entry_to_jsonl() {
@@ -77,8 +77,15 @@ async fn truncates_long_query_in_log() {
     let content = std::fs::read_to_string(&path).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(content.lines().next().unwrap()).unwrap();
     let logged_query = parsed["query"].as_str().unwrap();
-    assert!(logged_query.len() <= 104, "Query should be truncated, got {} chars", logged_query.len()); // 100 + "..."
-    assert!(logged_query.ends_with("..."), "Truncated query should end with ...");
+    assert!(
+        logged_query.len() <= 104,
+        "Query should be truncated, got {} chars",
+        logged_query.len()
+    ); // 100 + "..."
+    assert!(
+        logged_query.ends_with("..."),
+        "Truncated query should end with ..."
+    );
 }
 
 #[test]

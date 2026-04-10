@@ -83,9 +83,8 @@ fn tokenize(input: &str) -> Vec<Token> {
                 // Close tag
                 let name = stripped.trim().to_lowercase();
                 tokens.push(Token::CloseTag { name });
-            } else if tag_content.ends_with('/') {
+            } else if let Some(inner) = tag_content.strip_suffix('/') {
                 // Self-closing tag
-                let inner = &tag_content[..tag_content.len() - 1];
                 let (name, attrs) = parse_tag_inner(inner);
                 tokens.push(Token::SelfClosingTag { name, attrs });
             } else {
@@ -310,8 +309,6 @@ impl Walker {
             Token::Text(ref text) => {
                 if self.in_cell {
                     self.current_cell.push_str(text);
-                } else if self.in_pre || self.in_code {
-                    self.output.push_str(text);
                 } else {
                     self.output.push_str(text);
                 }
@@ -323,10 +320,16 @@ impl Walker {
                     self.output.push_str(content);
                 }
             }
-            Token::SelfClosingTag { ref name, ref attrs } => {
+            Token::SelfClosingTag {
+                ref name,
+                ref attrs,
+            } => {
                 self.handle_self_closing(name, attrs);
             }
-            Token::OpenTag { ref name, ref attrs } => {
+            Token::OpenTag {
+                ref name,
+                ref attrs,
+            } => {
                 self.handle_open_tag(name, attrs);
             }
             Token::CloseTag { ref name } => {
@@ -563,8 +566,7 @@ impl Walker {
             }
             "th" | "td" => {
                 self.in_cell = false;
-                self.current_row
-                    .push(self.current_cell.trim().to_string());
+                self.current_row.push(self.current_cell.trim().to_string());
                 self.current_cell.clear();
             }
             "tr" => {
@@ -629,9 +631,7 @@ impl Walker {
             match tok {
                 Token::OpenTag { name, attrs } if name == "ac:parameter" => {
                     in_param = true;
-                    param_name = get_attr(attrs, "ac:name")
-                        .unwrap_or("")
-                        .to_string();
+                    param_name = get_attr(attrs, "ac:name").unwrap_or("").to_string();
                     param_value.clear();
                 }
                 Token::CloseTag { name } if name == "ac:parameter" && in_param => {

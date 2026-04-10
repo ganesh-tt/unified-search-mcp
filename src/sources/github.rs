@@ -8,15 +8,12 @@ use regex::Regex;
 use tokio::process::Command;
 use tokio::time::timeout;
 
-use crate::models::{
-    HealthStatus, SearchError, SearchQuery, SearchResult, SourceHealth,
-};
 use super::SearchSource;
+use crate::models::{HealthStatus, SearchError, SearchQuery, SearchResult, SourceHealth};
 
 /// Validates GitHub owner/repo names — alphanumeric, dots, hyphens, underscores.
-static VALID_GH_NAME_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^[a-zA-Z0-9._-]+$").unwrap()
-});
+static VALID_GH_NAME_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9._-]+$").unwrap());
 
 // ---------------------------------------------------------------------------
 // Config
@@ -75,10 +72,13 @@ impl GitHubSource {
                     message: format!("Failed to spawn gh CLI: {}", e),
                 })?;
 
-            let output = child.wait_with_output().await.map_err(|e| SearchError::Source {
-                source_name: "github".to_string(),
-                message: format!("Failed to read gh output: {}", e),
-            })?;
+            let output = child
+                .wait_with_output()
+                .await
+                .map_err(|e| SearchError::Source {
+                    source_name: "github".to_string(),
+                    message: format!("Failed to read gh output: {}", e),
+                })?;
 
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
@@ -103,11 +103,7 @@ impl GitHubSource {
 
                 return Err(SearchError::Source {
                     source_name: "github".to_string(),
-                    message: format!(
-                        "gh exited with status {}: {}",
-                        output.status,
-                        stderr.trim()
-                    ),
+                    message: format!("gh exited with status {}: {}", output.status, stderr.trim()),
                 });
             }
 
@@ -160,27 +156,33 @@ impl GitHubSource {
             self.run_gh(&comments_args),
         );
 
-        let pr_json: serde_json::Value = serde_json::from_str(&pr_result?)
-            .map_err(|e| SearchError::Source {
+        let pr_json: serde_json::Value =
+            serde_json::from_str(&pr_result?).map_err(|e| SearchError::Source {
                 source_name: "github".to_string(),
                 message: format!("Failed to parse PR JSON: {}", e),
             })?;
 
-        let reviews_json: serde_json::Value = serde_json::from_str(&reviews_result?)
-            .map_err(|e| SearchError::Source {
+        let reviews_json: serde_json::Value =
+            serde_json::from_str(&reviews_result?).map_err(|e| SearchError::Source {
                 source_name: "github".to_string(),
                 message: format!("Failed to parse reviews JSON: {}", e),
             })?;
 
-        let comments_json: serde_json::Value = serde_json::from_str(&comments_result?)
-            .map_err(|e| SearchError::Source {
+        let comments_json: serde_json::Value =
+            serde_json::from_str(&comments_result?).map_err(|e| SearchError::Source {
                 source_name: "github".to_string(),
                 message: format!("Failed to parse comments JSON: {}", e),
             })?;
 
         // Extract PR metadata
-        let title = pr_json.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled");
-        let state = pr_json.get("state").and_then(|v| v.as_str()).unwrap_or("unknown");
+        let title = pr_json
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Untitled");
+        let state = pr_json
+            .get("state")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
         let merged_at = pr_json.get("merged_at").and_then(|v| v.as_str());
         let status = if merged_at.is_some() {
             "Merged"
@@ -206,12 +208,30 @@ impl GitHubSource {
             .and_then(|b| b.get("ref"))
             .and_then(|v| v.as_str())
             .unwrap_or("?");
-        let created_at = pr_json.get("created_at").and_then(|v| v.as_str()).unwrap_or("?");
-        let updated_at = pr_json.get("updated_at").and_then(|v| v.as_str()).unwrap_or("?");
-        let additions = pr_json.get("additions").and_then(|v| v.as_u64()).unwrap_or(0);
-        let deletions = pr_json.get("deletions").and_then(|v| v.as_u64()).unwrap_or(0);
-        let changed_files = pr_json.get("changed_files").and_then(|v| v.as_u64()).unwrap_or(0);
-        let body = pr_json.get("body").and_then(|v| v.as_str()).unwrap_or("*No description provided.*");
+        let created_at = pr_json
+            .get("created_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or("?");
+        let updated_at = pr_json
+            .get("updated_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or("?");
+        let additions = pr_json
+            .get("additions")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let deletions = pr_json
+            .get("deletions")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let changed_files = pr_json
+            .get("changed_files")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let body = pr_json
+            .get("body")
+            .and_then(|v| v.as_str())
+            .unwrap_or("*No description provided.*");
 
         let mut md = String::new();
         md.push_str(&format!("# {}/{}#{}: {}\n\n", owner, repo, number, title));
@@ -241,11 +261,20 @@ impl GitHubSource {
                 .and_then(|u| u.get("login"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
-            let review_state = review.get("state").and_then(|v| v.as_str()).unwrap_or("PENDING");
-            let submitted_at = review.get("submitted_at").and_then(|v| v.as_str()).unwrap_or("?");
+            let review_state = review
+                .get("state")
+                .and_then(|v| v.as_str())
+                .unwrap_or("PENDING");
+            let submitted_at = review
+                .get("submitted_at")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
             let review_body = review.get("body").and_then(|v| v.as_str()).unwrap_or("");
 
-            md.push_str(&format!("\n### @{} — {} — {}\n", reviewer, review_state, submitted_at));
+            md.push_str(&format!(
+                "\n### @{} — {} — {}\n",
+                reviewer, review_state, submitted_at
+            ));
             if !review_body.is_empty() {
                 md.push_str(&format!("{}\n", review_body));
             }
@@ -262,7 +291,10 @@ impl GitHubSource {
                 .unwrap_or("unknown");
             let path = comment.get("path").and_then(|v| v.as_str()).unwrap_or("?");
             let line = comment.get("line").and_then(|v| v.as_u64()).unwrap_or(0);
-            let comment_created = comment.get("created_at").and_then(|v| v.as_str()).unwrap_or("?");
+            let comment_created = comment
+                .get("created_at")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
             let comment_body = comment.get("body").and_then(|v| v.as_str()).unwrap_or("");
 
             md.push_str(&format!(
@@ -298,26 +330,30 @@ impl GitHubSource {
         let issue_args = ["api", issue_path.as_str()];
         let comments_args = ["api", comments_path.as_str()];
 
-        let (issue_result, comments_result) = tokio::join!(
-            self.run_gh(&issue_args),
-            self.run_gh(&comments_args),
-        );
+        let (issue_result, comments_result) =
+            tokio::join!(self.run_gh(&issue_args), self.run_gh(&comments_args),);
 
-        let issue_json: serde_json::Value = serde_json::from_str(&issue_result?)
-            .map_err(|e| SearchError::Source {
+        let issue_json: serde_json::Value =
+            serde_json::from_str(&issue_result?).map_err(|e| SearchError::Source {
                 source_name: "github".to_string(),
                 message: format!("Failed to parse issue JSON: {}", e),
             })?;
 
-        let comments_json: serde_json::Value = serde_json::from_str(&comments_result?)
-            .map_err(|e| SearchError::Source {
+        let comments_json: serde_json::Value =
+            serde_json::from_str(&comments_result?).map_err(|e| SearchError::Source {
                 source_name: "github".to_string(),
                 message: format!("Failed to parse comments JSON: {}", e),
             })?;
 
         // Extract issue metadata
-        let title = issue_json.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled");
-        let state = issue_json.get("state").and_then(|v| v.as_str()).unwrap_or("unknown");
+        let title = issue_json
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Untitled");
+        let state = issue_json
+            .get("state")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
         let status = match state {
             "open" => "Open",
             "closed" => "Closed",
@@ -328,9 +364,18 @@ impl GitHubSource {
             .and_then(|u| u.get("login"))
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
-        let created_at = issue_json.get("created_at").and_then(|v| v.as_str()).unwrap_or("?");
-        let updated_at = issue_json.get("updated_at").and_then(|v| v.as_str()).unwrap_or("?");
-        let body = issue_json.get("body").and_then(|v| v.as_str()).unwrap_or("*No description provided.*");
+        let created_at = issue_json
+            .get("created_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or("?");
+        let updated_at = issue_json
+            .get("updated_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or("?");
+        let body = issue_json
+            .get("body")
+            .and_then(|v| v.as_str())
+            .unwrap_or("*No description provided.*");
 
         // Labels
         let labels: Vec<&str> = issue_json
@@ -366,10 +411,16 @@ impl GitHubSource {
                 .and_then(|u| u.get("login"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
-            let comment_created = comment.get("created_at").and_then(|v| v.as_str()).unwrap_or("?");
+            let comment_created = comment
+                .get("created_at")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
             let comment_body = comment.get("body").and_then(|v| v.as_str()).unwrap_or("");
 
-            md.push_str(&format!("\n### @{} — {}\n{}\n", commenter, comment_created, comment_body));
+            md.push_str(&format!(
+                "\n### @{} — {}\n{}\n",
+                commenter, comment_created, comment_body
+            ));
         }
 
         Ok(md)
@@ -399,10 +450,7 @@ impl GitHubSource {
     }
 
     /// Search issues and PRs via `gh api search/issues`.
-    async fn search_issues(
-        &self,
-        query: &str,
-    ) -> Result<Vec<SearchResult>, SearchError> {
+    async fn search_issues(&self, query: &str) -> Result<Vec<SearchResult>, SearchError> {
         let scope = self.build_scope_qualifier();
         let full_query = if scope.is_empty() {
             query.to_string()
@@ -445,22 +493,13 @@ impl GitHubSource {
         let results: Vec<SearchResult> = items
             .iter()
             .map(|item| {
-                let number = item
-                    .get("number")
-                    .and_then(|n| n.as_u64())
-                    .unwrap_or(0);
-                let title_text = item
-                    .get("title")
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("");
+                let number = item.get("number").and_then(|n| n.as_u64()).unwrap_or(0);
+                let title_text = item.get("title").and_then(|t| t.as_str()).unwrap_or("");
                 let html_url = item
                     .get("html_url")
                     .and_then(|u| u.as_str())
                     .map(|s| s.to_string());
-                let body_text = item
-                    .get("body")
-                    .and_then(|b| b.as_str())
-                    .unwrap_or("");
+                let body_text = item.get("body").and_then(|b| b.as_str()).unwrap_or("");
                 let state = item
                     .get("state")
                     .and_then(|s| s.as_str())
@@ -495,10 +534,7 @@ impl GitHubSource {
                     .map(|dt| dt.with_timezone(&chrono::Utc));
 
                 // Normalize score
-                let raw_score = item
-                    .get("score")
-                    .and_then(|s| s.as_f64())
-                    .unwrap_or(0.0);
+                let raw_score = item.get("score").and_then(|s| s.as_f64()).unwrap_or(0.0);
                 let relevance = if max_score > 0.0 {
                     (raw_score / max_score) as f32
                 } else {
@@ -526,10 +562,7 @@ impl GitHubSource {
     }
 
     /// Search code via `gh api search/code`.
-    async fn search_code(
-        &self,
-        query: &str,
-    ) -> Result<Vec<SearchResult>, SearchError> {
+    async fn search_code(&self, query: &str) -> Result<Vec<SearchResult>, SearchError> {
         let scope = self.build_scope_qualifier();
         let full_query = if scope.is_empty() {
             query.to_string()
@@ -572,14 +605,8 @@ impl GitHubSource {
         let results: Vec<SearchResult> = items
             .iter()
             .map(|item| {
-                let name = item
-                    .get("name")
-                    .and_then(|n| n.as_str())
-                    .unwrap_or("");
-                let file_path = item
-                    .get("path")
-                    .and_then(|p| p.as_str())
-                    .unwrap_or("");
+                let name = item.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                let file_path = item.get("path").and_then(|p| p.as_str()).unwrap_or("");
                 let html_url = item
                     .get("html_url")
                     .and_then(|u| u.as_str())
@@ -594,10 +621,7 @@ impl GitHubSource {
                 let snippet = file_path.to_string();
 
                 // Normalize score
-                let raw_score = item
-                    .get("score")
-                    .and_then(|s| s.as_f64())
-                    .unwrap_or(0.0);
+                let raw_score = item.get("score").and_then(|s| s.as_f64()).unwrap_or(0.0);
                 let relevance = if max_score > 0.0 {
                     (raw_score / max_score) as f32
                 } else {

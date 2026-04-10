@@ -17,7 +17,11 @@ struct CacheEntry {
 
 impl ResponseCache {
     pub fn new(max_entries: usize, ttl: Duration) -> Self {
-        Self { entries: HashMap::new(), max_entries, ttl }
+        Self {
+            entries: HashMap::new(),
+            max_entries,
+            ttl,
+        }
     }
 
     fn make_key(query: &str, sources: &[&str], max_results: usize) -> String {
@@ -27,11 +31,17 @@ impl ResponseCache {
         format!("{}|{}|{}", normalized, sorted.join(","), max_results)
     }
 
-    pub fn get(&mut self, query: &str, sources: &[&str], max_results: usize) -> Option<UnifiedSearchResponse> {
+    pub fn get(
+        &mut self,
+        query: &str,
+        sources: &[&str],
+        max_results: usize,
+    ) -> Option<UnifiedSearchResponse> {
         let key = Self::make_key(query, sources, max_results);
-        let expired = self.entries.get(&key).map_or(false, |e| {
-            self.ttl.is_zero() || e.created_at.elapsed() > self.ttl
-        });
+        let expired = self
+            .entries
+            .get(&key)
+            .is_some_and(|e| self.ttl.is_zero() || e.created_at.elapsed() > self.ttl);
         if expired {
             self.entries.remove(&key);
             return None;
@@ -46,7 +56,13 @@ impl ResponseCache {
         }
     }
 
-    pub fn put(&mut self, query: &str, sources: &[&str], max_results: usize, response: UnifiedSearchResponse) {
+    pub fn put(
+        &mut self,
+        query: &str,
+        sources: &[&str],
+        max_results: usize,
+        response: UnifiedSearchResponse,
+    ) {
         if self.ttl.is_zero() {
             return;
         }
@@ -54,15 +70,20 @@ impl ResponseCache {
         if self.entries.len() >= self.max_entries && !self.entries.contains_key(&key) {
             self.evict_oldest();
         }
-        self.entries.insert(key, CacheEntry {
-            response,
-            created_at: Instant::now(),
-            last_accessed: Instant::now(),
-        });
+        self.entries.insert(
+            key,
+            CacheEntry {
+                response,
+                created_at: Instant::now(),
+                last_accessed: Instant::now(),
+            },
+        );
     }
 
     fn evict_oldest(&mut self) {
-        if let Some(key) = self.entries.iter()
+        if let Some(key) = self
+            .entries
+            .iter()
             .min_by_key(|(_, e)| e.last_accessed)
             .map(|(k, _)| k.clone())
         {

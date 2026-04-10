@@ -6,10 +6,8 @@ use chrono::{DateTime, Utc};
 use reqwest::Client;
 use serde::Deserialize;
 
-use crate::models::{
-    HealthStatus, SearchError, SearchQuery, SearchResult, SourceHealth,
-};
 use super::SearchSource;
+use crate::models::{HealthStatus, SearchError, SearchQuery, SearchResult, SourceHealth};
 
 // ---------------------------------------------------------------------------
 // Config
@@ -83,11 +81,7 @@ impl SlackSource {
     ///
     /// Returns a Markdown string with the channel name, original message,
     /// thread replies, and a deduplicated participant list.
-    pub async fn get_detail_thread(
-        &self,
-        channel: &str,
-        ts: &str,
-    ) -> Result<String, SearchError> {
+    pub async fn get_detail_thread(&self, channel: &str, ts: &str) -> Result<String, SearchError> {
         let thread_start = std::time::Instant::now();
         tracing::info!(channel = %channel, ts = %ts, "slack: get_detail_thread starting");
 
@@ -99,30 +93,40 @@ impl SlackSource {
             let resp = self
                 .client
                 .get(&info_url)
-                .header("Authorization", format!("Bearer {}", self.config.user_token))
+                .header(
+                    "Authorization",
+                    format!("Bearer {}", self.config.user_token),
+                )
                 .query(&[("channel", channel)])
                 .send()
                 .await
                 .map_err(SearchError::Http)?;
-            resp.json::<SlackConversationInfoResponse>().await.map_err(|e| SearchError::Source {
-                source_name: "slack".to_string(),
-                message: format!("Failed to parse conversations.info response: {e}"),
-            })
+            resp.json::<SlackConversationInfoResponse>()
+                .await
+                .map_err(|e| SearchError::Source {
+                    source_name: "slack".to_string(),
+                    message: format!("Failed to parse conversations.info response: {e}"),
+                })
         };
 
         let replies_future = async {
             let resp = self
                 .client
                 .get(&replies_url)
-                .header("Authorization", format!("Bearer {}", self.config.user_token))
+                .header(
+                    "Authorization",
+                    format!("Bearer {}", self.config.user_token),
+                )
                 .query(&[("channel", channel), ("ts", ts), ("limit", "200")])
                 .send()
                 .await
                 .map_err(SearchError::Http)?;
-            resp.json::<SlackConversationResponse>().await.map_err(|e| SearchError::Source {
-                source_name: "slack".to_string(),
-                message: format!("Failed to parse conversations.replies response: {e}"),
-            })
+            resp.json::<SlackConversationResponse>()
+                .await
+                .map_err(|e| SearchError::Source {
+                    source_name: "slack".to_string(),
+                    message: format!("Failed to parse conversations.replies response: {e}"),
+                })
         };
 
         let (info_result, replies_result) = tokio::join!(info_future, replies_future);
@@ -140,7 +144,9 @@ impl SlackSource {
                 source_name: "slack".to_string(),
                 message: format!(
                     "conversations.replies failed: {}",
-                    replies_body.error.unwrap_or_else(|| "unknown_error".to_string())
+                    replies_body
+                        .error
+                        .unwrap_or_else(|| "unknown_error".to_string())
                 ),
             });
         }
@@ -262,6 +268,7 @@ struct SlackConversationResponse {
 #[derive(Debug, Deserialize)]
 struct SlackConversationMessage {
     #[serde(rename = "type")]
+    #[allow(dead_code)]
     msg_type: Option<String>,
     user: Option<String>,
     text: Option<String>,
@@ -270,6 +277,7 @@ struct SlackConversationMessage {
 
 /// Response from conversations.info
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct SlackConversationInfoResponse {
     ok: bool,
     error: Option<String>,
@@ -278,6 +286,7 @@ struct SlackConversationInfoResponse {
 
 #[derive(Debug, Deserialize)]
 struct SlackChannelInfo {
+    #[allow(dead_code)]
     id: Option<String>,
     name: Option<String>,
 }
@@ -303,7 +312,10 @@ impl SearchSource for SlackSource {
         let result = self
             .client
             .post(&url)
-            .header("Authorization", format!("Bearer {}", self.config.user_token))
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.config.user_token),
+            )
             .send()
             .await;
 
@@ -363,7 +375,10 @@ impl SearchSource for SlackSource {
         let resp = self
             .client
             .get(&url)
-            .header("Authorization", format!("Bearer {}", self.config.user_token))
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.config.user_token),
+            )
             .query(&[
                 ("query", query_text.as_str()),
                 ("count", &self.config.max_results.to_string()),
@@ -439,9 +454,9 @@ impl SearchSource for SlackSource {
 
                 // Normalize score to [0.0, 1.0]
                 let raw_score = m.score.unwrap_or(0.0);
-                let relevance = if max_score > 0.0 && max_score > 1.0 {
+                let relevance = if max_score > 1.0 {
                     (raw_score / max_score) as f32
-                } else if raw_score >= 0.0 && raw_score <= 1.0 {
+                } else if (0.0..=1.0).contains(&raw_score) {
                     raw_score as f32
                 } else {
                     (raw_score / max_score.max(1.0)) as f32

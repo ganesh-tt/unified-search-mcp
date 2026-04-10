@@ -110,9 +110,10 @@ fn build_server(sources: Vec<Box<dyn SearchSource>>) -> UnifiedSearchServer {
 /// We verify by calling each one and confirming they return non-empty strings.
 #[tokio::test]
 async fn tools_list_returns_all_tools() {
-    let server = build_server(vec![
-        boxed(MockSource::new("slack", vec![make_result("slack", "msg1", 0.9)])),
-    ]);
+    let server = build_server(vec![boxed(MockSource::new(
+        "slack",
+        vec![make_result("slack", "msg1", 0.9)],
+    ))]);
 
     // All handlers should be callable and return non-empty output
     let r1 = server
@@ -123,9 +124,18 @@ async fn tools_list_returns_all_tools() {
         .await;
     let r3 = server.handle_list_sources().await;
 
-    assert!(!r1.is_empty(), "handle_unified_search should return non-empty");
-    assert!(!r2.is_empty(), "handle_search_source should return non-empty");
-    assert!(!r3.is_empty(), "handle_list_sources should return non-empty");
+    assert!(
+        !r1.is_empty(),
+        "handle_unified_search should return non-empty"
+    );
+    assert!(
+        !r2.is_empty(),
+        "handle_search_source should return non-empty"
+    );
+    assert!(
+        !r3.is_empty(),
+        "handle_list_sources should return non-empty"
+    );
 }
 
 // ===========================================================================
@@ -220,17 +230,11 @@ async fn search_source_tool_dispatch() {
         serde_json::from_str(&output).expect("handle_search_source output should be valid JSON");
 
     // Should be an array
-    assert!(
-        parsed.is_array(),
-        "Expected JSON array, got: {parsed}"
-    );
+    assert!(parsed.is_array(), "Expected JSON array, got: {parsed}");
 
     let arr = parsed.as_array().unwrap();
     // Should have results from slack only
-    assert!(
-        !arr.is_empty(),
-        "Expected at least one result from slack"
-    );
+    assert!(!arr.is_empty(), "Expected at least one result from slack");
 
     // All results should be from slack source
     for item in arr {
@@ -285,9 +289,10 @@ async fn list_sources_tool_dispatch() {
 /// message indicating no results or an error about the unknown source.
 #[tokio::test]
 async fn unknown_source_returns_empty() {
-    let server = build_server(vec![
-        boxed(MockSource::new("slack", vec![make_result("slack", "msg", 0.9)])),
-    ]);
+    let server = build_server(vec![boxed(MockSource::new(
+        "slack",
+        vec![make_result("slack", "msg", 0.9)],
+    ))]);
 
     let output = server
         .handle_search_source("nonexistent".to_string(), "test".to_string(), None, false)
@@ -334,9 +339,7 @@ async fn get_detail_returns_error_for_unknown_identifier() {
 #[tokio::test]
 async fn get_detail_jira_key_without_source_returns_not_configured() {
     let server = build_server(vec![]);
-    let output = server
-        .handle_get_detail("FIN-1234".to_string(), None)
-        .await;
+    let output = server.handle_get_detail("FIN-1234".to_string(), None).await;
     let lower = output.to_lowercase();
     assert!(
         lower.contains("not configured"),

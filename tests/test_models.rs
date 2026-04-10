@@ -44,7 +44,7 @@ fn sort_by_contract(results: &mut Vec<SearchResult>) {
         // Secondary: timestamp descending (more recent first), None sorts last
         match (&a.timestamp, &b.timestamp) {
             (Some(at), Some(bt)) => bt.cmp(at), // descending: more recent first
-            (Some(_), None) => std::cmp::Ordering::Less,    // a has ts, b doesn't → a first (a < b)
+            (Some(_), None) => std::cmp::Ordering::Less, // a has ts, b doesn't → a first (a < b)
             (None, Some(_)) => std::cmp::Ordering::Greater, // b has ts, a doesn't → b first (a > b)
             (None, None) => std::cmp::Ordering::Equal,
         }
@@ -152,7 +152,9 @@ fn search_result_ordering_none_timestamp_last() {
     // The one with a timestamp should come before the Nones
     assert_eq!(sources[0], "has_ts");
     // The remaining two have None timestamps -- order among them is unspecified but both after has_ts
-    assert!(sources[1..].iter().all(|s| *s == "no_ts_1" || *s == "no_ts_2"));
+    assert!(sources[1..]
+        .iter()
+        .all(|s| *s == "no_ts_1" || *s == "no_ts_2"));
 }
 
 // ---------------------------------------------------------------------------
@@ -350,22 +352,20 @@ fn per_source_stats_serializes() {
 
 #[test]
 fn unified_response_includes_per_source_stats() {
-    use unified_search_mcp::models::{UnifiedSearchResponse, PerSourceStats};
+    use unified_search_mcp::models::{PerSourceStats, UnifiedSearchResponse};
 
     let response = UnifiedSearchResponse {
         results: vec![],
         warnings: vec![],
         total_sources_queried: 2,
         query_time_ms: 500,
-        per_source_stats: vec![
-            PerSourceStats {
-                source: "slack".to_string(),
-                latency_ms: 300,
-                result_count: 5,
-                comment_count: 10,
-                error: None,
-            },
-        ],
+        per_source_stats: vec![PerSourceStats {
+            source: "slack".to_string(),
+            latency_ms: 300,
+            result_count: 5,
+            comment_count: 10,
+            error: None,
+        }],
         cache_hit: false,
     };
 
@@ -373,15 +373,15 @@ fn unified_response_includes_per_source_stats() {
     assert_eq!(response.per_source_stats[0].source, "slack");
 }
 
-
-
 #[test]
 fn search_result_empty_metadata() {
     let r = make_result("test", 0.5, None);
     assert!(r.metadata.is_empty());
 
     let json_val: serde_json::Value = serde_json::to_value(&r).expect("serialize");
-    let meta = json_val["metadata"].as_object().expect("metadata is object");
+    let meta = json_val["metadata"]
+        .as_object()
+        .expect("metadata is object");
     assert!(meta.is_empty());
 
     // Also verify it round-trips correctly through JSON string

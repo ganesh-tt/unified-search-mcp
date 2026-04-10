@@ -22,7 +22,10 @@ pub async fn verify(config: &AppConfig, config_path: &str) -> bool {
 
     // Count enabled sources
     let enabled = count_enabled(config);
-    println!("[OK]  Config loaded from {} ({} sources enabled)", config_path, enabled);
+    println!(
+        "[OK]  Config loaded from {} ({} sources enabled)",
+        config_path, enabled
+    );
 
     // --- Slack ---
     if let Some(ref slack_cfg) = config.sources.slack {
@@ -144,7 +147,11 @@ pub async fn verify(config: &AppConfig, config_path: &str) -> bool {
             for path in &local_cfg.config.paths {
                 if path.exists() && path.is_dir() {
                     let file_count = count_matching_files(path, &local_cfg.config.include_patterns);
-                    println!("       {} — directory, {} matching files", path.display(), file_count);
+                    println!(
+                        "       {} — directory, {} matching files",
+                        path.display(),
+                        file_count
+                    );
                 } else if path.exists() {
                     println!("       {} — exists (not a directory)", path.display());
                 } else {
@@ -188,7 +195,10 @@ pub async fn verify(config: &AppConfig, config_path: &str) -> bool {
     // --- Summary ---
     println!();
     if fail_count == 0 {
-        println!("Ready! {} sources configured, {} healthy.", source_count, healthy_count);
+        println!(
+            "Ready! {} sources configured, {} healthy.",
+            source_count, healthy_count
+        );
     } else {
         println!(
             "{} source(s) failed out of {} configured. Fix the [FAIL] items above.",
@@ -202,19 +212,29 @@ pub async fn verify(config: &AppConfig, config_path: &str) -> bool {
 /// Count how many sources are enabled in the config.
 fn count_enabled(config: &AppConfig) -> usize {
     let mut n = 0;
-    if config.sources.slack.as_ref().map_or(false, |s| s.enabled) {
+    if config.sources.slack.as_ref().is_some_and(|s| s.enabled) {
         n += 1;
     }
-    if config.sources.confluence.as_ref().map_or(false, |s| s.enabled) {
+    if config
+        .sources
+        .confluence
+        .as_ref()
+        .is_some_and(|s| s.enabled)
+    {
         n += 1;
     }
-    if config.sources.jira.as_ref().map_or(false, |s| s.enabled) {
+    if config.sources.jira.as_ref().is_some_and(|s| s.enabled) {
         n += 1;
     }
-    if config.sources.local_text.as_ref().map_or(false, |s| s.enabled) {
+    if config
+        .sources
+        .local_text
+        .as_ref()
+        .is_some_and(|s| s.enabled)
+    {
         n += 1;
     }
-    if config.sources.github.as_ref().map_or(false, |s| s.enabled) {
+    if config.sources.github.as_ref().is_some_and(|s| s.enabled) {
         n += 1;
     }
     n
@@ -232,7 +252,7 @@ fn format_latency(ms: Option<u64>) -> String {
 /// If no include patterns are specified, counts all files.
 fn count_matching_files(dir: &Path, include_patterns: &[String]) -> usize {
     let walker = walkdir::WalkDir::new(dir)
-        .follow_links(false)  // security: prevent symlink traversal
+        .follow_links(false) // security: prevent symlink traversal
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file());
@@ -243,10 +263,7 @@ fn count_matching_files(dir: &Path, include_patterns: &[String]) -> usize {
 
     walker
         .filter(|entry| {
-            let name = entry
-                .file_name()
-                .to_str()
-                .unwrap_or("");
+            let name = entry.file_name().to_str().unwrap_or("");
             include_patterns.iter().any(|pat| {
                 if pat.starts_with("*.") {
                     let ext = &pat[1..]; // e.g., ".rs"

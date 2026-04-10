@@ -34,38 +34,51 @@ pub struct SearchOrchestrator {
 }
 
 impl SearchOrchestrator {
-    pub fn new(sources: Vec<Box<dyn SearchSource>>, config: OrchestratorConfig, cache_ttl_seconds: u64) -> Self {
+    pub fn new(
+        sources: Vec<Box<dyn SearchSource>>,
+        config: OrchestratorConfig,
+        cache_ttl_seconds: u64,
+    ) -> Self {
         let cache = if cache_ttl_seconds > 0 {
-            Some(Mutex::new(ResponseCache::new(100, Duration::from_secs(cache_ttl_seconds))))
+            Some(Mutex::new(ResponseCache::new(
+                100,
+                Duration::from_secs(cache_ttl_seconds),
+            )))
         } else {
             None
         };
-        let sources = sources.into_iter().map(|s| Arc::from(s)).collect();
-        Self { sources, config, cache }
+        let sources = sources.into_iter().map(Arc::from).collect();
+        Self {
+            sources,
+            config,
+            cache,
+        }
     }
 
     pub async fn search(&self, query: &SearchQuery, no_cache: bool) -> UnifiedSearchResponse {
         let start = Instant::now();
 
         // Step 1: Determine which sources to query based on filters
-        let active_sources: Vec<Arc<dyn SearchSource>> = if let Some(ref filter_sources) =
-            query.filters.sources
-        {
-            self.sources
-                .iter()
-                .filter(|s| filter_sources.contains(&s.name().to_string()))
-                .cloned()
-                .collect()
-        } else {
-            self.sources.clone()
-        };
+        let active_sources: Vec<Arc<dyn SearchSource>> =
+            if let Some(ref filter_sources) = query.filters.sources {
+                self.sources
+                    .iter()
+                    .filter(|s| filter_sources.contains(&s.name().to_string()))
+                    .cloned()
+                    .collect()
+            } else {
+                self.sources.clone()
+            };
 
         let total_sources_queried = active_sources.len();
 
         // Cache lookup
         if !no_cache {
             if let Some(ref cache_mutex) = self.cache {
-                let source_names: Vec<String> = active_sources.iter().map(|s| s.name().to_string()).collect();
+                let source_names: Vec<String> = active_sources
+                    .iter()
+                    .map(|s| s.name().to_string())
+                    .collect();
                 let source_refs: Vec<&str> = source_names.iter().map(|s| s.as_str()).collect();
                 let mut cache = cache_mutex.lock().await;
                 if let Some(cached) = cache.get(&query.text, &source_refs, query.max_results) {
@@ -105,7 +118,8 @@ impl SearchOrchestrator {
                     Ok(search_result) => match search_result {
                         Ok(results) => {
                             let count = results.len();
-                            let comment_count: usize = results.iter()
+                            let comment_count: usize = results
+                                .iter()
                                 .filter_map(|r| r.metadata.get("comment_count"))
                                 .filter_map(|c| c.parse::<usize>().ok())
                                 .sum();
@@ -227,10 +241,18 @@ impl SearchOrchestrator {
 
         // Store in cache
         if let Some(ref cache_mutex) = self.cache {
-            let source_names: Vec<String> = active_sources.iter().map(|s| s.name().to_string()).collect();
+            let source_names: Vec<String> = active_sources
+                .iter()
+                .map(|s| s.name().to_string())
+                .collect();
             let source_refs: Vec<&str> = source_names.iter().map(|s| s.as_str()).collect();
             let mut cache = cache_mutex.lock().await;
-            cache.put(&query.text, &source_refs, query.max_results, response.clone());
+            cache.put(
+                &query.text,
+                &source_refs,
+                query.max_results,
+                response.clone(),
+            );
         }
 
         response
@@ -244,9 +266,6 @@ impl SearchOrchestrator {
 
 /// Normalize a snippet for dedup: take first 200 chars, collapse whitespace to single spaces.
 fn normalize_snippet_prefix(snippet: &str) -> String {
-    let collapsed: String = snippet
-        .split_whitespace()
-        .collect::<Vec<&str>>()
-        .join(" ");
+    let collapsed: String = snippet.split_whitespace().collect::<Vec<&str>>().join(" ");
     collapsed.chars().take(200).collect()
 }
