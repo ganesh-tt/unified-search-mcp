@@ -61,12 +61,13 @@ To answer "what context exists about topic X?":
 
 ## Prerequisites
 
+Pre-built binaries are available for macOS and Linux -- no Rust needed. If building from source:
+
 **Rust toolchain** (1.80+):
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source ~/.cargo/env
-cargo --version
 ```
 
 **Optional:** [ripgrep](https://github.com/BurntSushi/ripgrep) for faster local file search:
@@ -78,15 +79,33 @@ brew install ripgrep   # macOS
 
 ## Quick Start
 
-### One-click install
+### One-click install (recommended)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ganesh-tt/unified-search-mcp/master/install.sh | bash
 ```
 
-This installs Rust (if needed), builds the binary, creates a config file, and prints setup instructions.
+Downloads a pre-built binary for your platform (macOS/Linux, x86_64/aarch64). Falls back to building from source if no binary is available. No Rust toolchain needed.
 
-### Manual build
+### Download binary manually
+
+Grab the latest release for your platform from [Releases](https://github.com/ganesh-tt/unified-search-mcp/releases):
+
+```bash
+# macOS (Apple Silicon)
+curl -fsSL https://github.com/ganesh-tt/unified-search-mcp/releases/latest/download/unified-search-mcp-macos-aarch64.tar.gz | tar xz
+
+# macOS (Intel)
+curl -fsSL https://github.com/ganesh-tt/unified-search-mcp/releases/latest/download/unified-search-mcp-macos-x86_64.tar.gz | tar xz
+
+# Linux (x86_64)
+curl -fsSL https://github.com/ganesh-tt/unified-search-mcp/releases/latest/download/unified-search-mcp-linux-x86_64.tar.gz | tar xz
+
+# Linux (aarch64)
+curl -fsSL https://github.com/ganesh-tt/unified-search-mcp/releases/latest/download/unified-search-mcp-linux-aarch64.tar.gz | tar xz
+```
+
+### Build from source
 
 ```bash
 git clone https://github.com/ganesh-tt/unified-search-mcp.git
@@ -94,7 +113,7 @@ cd unified-search-mcp
 cargo build --release
 ```
 
-Binary is at `target/release/unified-search-mcp` (~8MB).
+Binary is at `target/release/unified-search-mcp` (~8MB). Requires Rust 1.80+.
 
 ### 1. Get credentials
 
