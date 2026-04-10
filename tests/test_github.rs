@@ -1,11 +1,25 @@
-use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 
-use tempfile::NamedTempFile;
+use tempfile::TempDir;
 
 use unified_search_mcp::models::*;
 use unified_search_mcp::sources::github::{GitHubConfig, GitHubSource};
 use unified_search_mcp::sources::SearchSource;
+
+/// Write a script file inside a TempDir, properly close the fd, and set executable.
+/// Returns (TempDir, path_string). The TempDir must be kept alive for the file to exist.
+fn write_script(content: &str) -> (TempDir, String) {
+    let dir = TempDir::new().expect("Failed to create temp dir");
+    let script_path = dir.path().join("gh_mock.sh");
+    std::fs::write(&script_path, content).expect("Failed to write script");
+    let mut perms = std::fs::metadata(&script_path)
+        .expect("Failed to read metadata")
+        .permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&script_path, perms).expect("Failed to set permissions");
+    let path_str = script_path.to_str().unwrap().to_string();
+    (dir, path_str)
+}
 
 // ===========================================================================
 // Helpers
@@ -14,12 +28,9 @@ use unified_search_mcp::sources::SearchSource;
 /// Create an executable shell script that routes responses based on the gh
 /// API endpoint being called. Supports search/issues, search/code, auth,
 /// and individual resource endpoints (for get_detail tests).
-fn make_detail_gh_script(endpoint_responses: &[(&str, &str)]) -> NamedTempFile {
-    let mut script = NamedTempFile::new().expect("Failed to create temp script");
-
+fn make_detail_gh_script(endpoint_responses: &[(&str, &str)]) -> (TempDir, String) {
     let mut case_arms = String::new();
     for (pattern, response) in endpoint_responses {
-        // Use a unique heredoc label per arm to avoid collisions
         let label = format!(
             "RESP_{}",
             pattern
@@ -42,8 +53,7 @@ fn make_detail_gh_script(endpoint_responses: &[(&str, &str)]) -> NamedTempFile {
         ));
     }
 
-    writeln!(
-        script,
+    let content = format!(
         r#"#!/bin/bash
 ARGS="$*"
 case "$ARGS" in
@@ -55,17 +65,9 @@ case "$ARGS" in
 esac
 "#,
         case_arms = case_arms,
-    )
-    .expect("Failed to write script");
+    );
 
-    let path = script.path().to_path_buf();
-    let mut perms = std::fs::metadata(&path)
-        .expect("Failed to read metadata")
-        .permissions();
-    perms.set_mode(0o755);
-    std::fs::set_permissions(&path, perms).expect("Failed to set permissions");
-
-    script
+    write_script(&content)
 }
 
 /// Create an executable shell script in a temp file that echoes the given
@@ -76,17 +78,13 @@ fn make_gh_script(
     code_json: Option<&str>,
     auth_exit_code: Option<i32>,
     auth_stderr: Option<&str>,
-) -> NamedTempFile {
-    let mut script = NamedTempFile::new().expect("Failed to create temp script");
-
+) -> (TempDir, String) {
     let issues_response = issues_json.unwrap_or(r#"{"total_count":0,"items":[]}"#);
     let code_response = code_json.unwrap_or(r#"{"total_count":0,"items":[]}"#);
     let auth_exit = auth_exit_code.unwrap_or(0);
     let auth_err = auth_stderr.unwrap_or("");
 
-    // Write a script that checks arguments to determine which response to give
-    writeln!(
-        script,
+    let content = format!(
         r#"#!/bin/bash
 # Fake gh CLI for testing
 ARGS="$@"
@@ -121,18 +119,9 @@ exit 1
         auth_err = auth_err,
         issues_response = issues_response,
         code_response = code_response,
-    )
-    .expect("Failed to write script");
+    );
 
-    // Make the script executable
-    let path = script.path().to_path_buf();
-    let mut perms = std::fs::metadata(&path)
-        .expect("Failed to read metadata")
-        .permissions();
-    perms.set_mode(0o755);
-    std::fs::set_permissions(&path, perms).expect("Failed to set permissions");
-
-    script
+    write_script(&content)
 }
 
 fn make_config(gh_path: &str) -> GitHubConfig {
@@ -185,8 +174,8 @@ async fn search_returns_issues_and_prs() {
         ]
     }"#;
 
-    let script = make_gh_script(Some(issues_json), None, None, None);
-    let config = make_config(script.path().to_str().unwrap());
+    let (_dir, gh_path) = make_gh_script(Some(issues_json), None, None, None);
+    let config = make_config(&gh_path);
     let source = GitHubSource::new(config);
 
     let results = source.search(&make_query("broadcast OOM")).await.unwrap();
@@ -243,8 +232,8 @@ async fn search_returns_code_results() {
         ]
     }"#;
 
-    let script = make_gh_script(None, Some(code_json), None, None);
-    let config = make_config(script.path().to_str().unwrap());
+    let (_dir, gh_path) = make_gh_script(None, Some(code_json), None, None);
+    let config = make_config(&gh_path);
     let source = GitHubSource::new(config);
 
     let results = source.search(&make_query("broadcast")).await.unwrap();
@@ -272,8 +261,8 @@ async fn search_returns_code_results() {
 
 #[tokio::test]
 async fn search_returns_empty_for_no_matches() {
-    let script = make_gh_script(None, None, None, None);
-    let config = make_config(script.path().to_str().unwrap());
+    let (_dir, gh_path) = make_gh_script(None, None, None, None);
+    let config = make_config(&gh_path);
     let source = GitHubSource::new(config);
 
     let results = source
@@ -319,8 +308,8 @@ async fn search_combines_issues_and_code() {
         ]
     }"#;
 
-    let script = make_gh_script(Some(issues_json), Some(code_json), None, None);
-    let config = make_config(script.path().to_str().unwrap());
+    let (_dir, gh_path) = make_gh_script(Some(issues_json), Some(code_json), None, None);
+    let config = make_config(&gh_path);
     let source = GitHubSource::new(config);
 
     let results = source.search(&make_query("OOM")).await.unwrap();
@@ -342,8 +331,8 @@ async fn search_combines_issues_and_code() {
 
 #[tokio::test]
 async fn health_check_authenticated() {
-    let script = make_gh_script(None, None, Some(0), None);
-    let config = make_config(script.path().to_str().unwrap());
+    let (_dir, gh_path) = make_gh_script(None, None, Some(0), None);
+    let config = make_config(&gh_path);
     let source = GitHubSource::new(config);
 
     let health = source.health_check().await;
@@ -360,13 +349,13 @@ async fn health_check_authenticated() {
 
 #[tokio::test]
 async fn health_check_not_authenticated() {
-    let script = make_gh_script(
+    let (_dir, gh_path) = make_gh_script(
         None,
         None,
         Some(1),
         Some("You are not logged into any GitHub hosts. Run gh auth login to authenticate."),
     );
-    let config = make_config(script.path().to_str().unwrap());
+    let config = make_config(&gh_path);
     let source = GitHubSource::new(config);
 
     let health = source.health_check().await;
@@ -398,7 +387,7 @@ async fn scope_qualifier_with_repos() {
     // When repos are configured, they should take precedence over orgs
     let issues_json = r#"{"total_count":0,"items":[]}"#;
 
-    let script = make_gh_script(Some(issues_json), None, None, None);
+    let (_dir, gh_path) = make_gh_script(Some(issues_json), None, None, None);
     let config = GitHubConfig {
         orgs: vec!["tookitaki".to_string()],
         repos: vec![
@@ -406,7 +395,7 @@ async fn scope_qualifier_with_repos() {
             "tookitaki/product-dss".to_string(),
         ],
         max_results: 10,
-        gh_path: script.path().to_str().unwrap().to_string(),
+        gh_path,
     };
     let source = GitHubSource::new(config);
 
@@ -441,8 +430,8 @@ async fn body_truncated_to_200_chars() {
         long_body
     );
 
-    let script = make_gh_script(Some(&issues_json), None, None, None);
-    let config = make_config(script.path().to_str().unwrap());
+    let (_dir, gh_path) = make_gh_script(Some(&issues_json), None, None, None);
+    let config = make_config(&gh_path);
     let source = GitHubSource::new(config);
 
     let results = source.search(&make_query("test")).await.unwrap();
@@ -479,28 +468,14 @@ async fn gh_binary_not_found() {
 #[tokio::test]
 async fn rate_limit_error_from_stderr() {
     // Create a script that always fails with rate limit error
-    let mut script = NamedTempFile::new().expect("Failed to create temp script");
-    writeln!(
-        script,
-        r#"#!/bin/bash
-echo "API rate limit exceeded" >&2
-exit 1
-"#
-    )
-    .expect("Failed to write script");
-
-    let path = script.path().to_path_buf();
-    let mut perms = std::fs::metadata(&path)
-        .expect("Failed to read metadata")
-        .permissions();
-    perms.set_mode(0o755);
-    std::fs::set_permissions(&path, perms).expect("Failed to set permissions");
+    let (_dir, gh_path) =
+        write_script("#!/bin/bash\necho \"API rate limit exceeded\" >&2\nexit 1\n");
 
     let config = GitHubConfig {
         orgs: vec!["tookitaki".to_string()],
         repos: vec![],
         max_results: 20,
-        gh_path: script.path().to_str().unwrap().to_string(),
+        gh_path,
     };
     let source = GitHubSource::new(config);
 
@@ -539,12 +514,12 @@ async fn search_with_no_orgs_or_repos() {
         ]
     }"#;
 
-    let script = make_gh_script(Some(issues_json), None, None, None);
+    let (_dir, gh_path) = make_gh_script(Some(issues_json), None, None, None);
     let config = GitHubConfig {
         orgs: vec![],
         repos: vec![],
         max_results: 20,
-        gh_path: script.path().to_str().unwrap().to_string(),
+        gh_path,
     };
     let source = GitHubSource::new(config);
 
@@ -599,12 +574,12 @@ async fn get_detail_pr_returns_full_markdown() {
         }
     ]"#;
 
-    let script = make_detail_gh_script(&[
+    let (_dir, gh_path) = make_detail_gh_script(&[
         ("pulls/123/reviews", reviews_json),
         ("pulls/123/comments", comments_json),
         ("pulls/123", pr_json),
     ]);
-    let config = make_config(script.path().to_str().unwrap());
+    let config = make_config(&gh_path);
     let source = GitHubSource::new(config);
 
     let md = source
@@ -676,11 +651,11 @@ async fn get_detail_issue_returns_full_markdown() {
         }
     ]"#;
 
-    let script = make_detail_gh_script(&[
+    let (_dir, gh_path) = make_detail_gh_script(&[
         ("issues/456/comments", comments_json),
         ("issues/456", issue_json),
     ]);
-    let config = make_config(script.path().to_str().unwrap());
+    let config = make_config(&gh_path);
     let source = GitHubSource::new(config);
 
     let md = source
@@ -733,12 +708,12 @@ async fn get_detail_pr_open_status() {
         "body": "Work in progress"
     }"#;
 
-    let script = make_detail_gh_script(&[
+    let (_dir, gh_path) = make_detail_gh_script(&[
         ("pulls/99/reviews", "[]"),
         ("pulls/99/comments", "[]"),
         ("pulls/99", pr_json),
     ]);
-    let config = make_config(script.path().to_str().unwrap());
+    let config = make_config(&gh_path);
     let source = GitHubSource::new(config);
 
     let md = source.get_detail_pr("org", "repo", 99).await.unwrap();
@@ -768,8 +743,9 @@ async fn get_detail_issue_no_labels() {
         "labels": []
     }"#;
 
-    let script = make_detail_gh_script(&[("issues/1/comments", "[]"), ("issues/1", issue_json)]);
-    let config = make_config(script.path().to_str().unwrap());
+    let (_dir, gh_path) =
+        make_detail_gh_script(&[("issues/1/comments", "[]"), ("issues/1", issue_json)]);
+    let config = make_config(&gh_path);
     let source = GitHubSource::new(config);
 
     let md = source.get_detail_issue("org", "repo", 1).await.unwrap();
