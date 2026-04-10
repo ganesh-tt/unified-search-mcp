@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/ganesh-tt/unified-search-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/ganesh-tt/unified-search-mcp/actions/workflows/ci.yml)
 
-A lightweight Rust MCP server that searches Slack, Confluence, JIRA, and local files in parallel from a single tool call.
+A lightweight Rust MCP server that searches Slack, Confluence, JIRA, GitHub, and local files in parallel from a single tool call.
 
 ## Why
 
@@ -35,7 +35,7 @@ unified-search-mcp replaces all of that with a single Rust binary.
 
 | Metric | Individual MCPs (Node.js) | unified-search-mcp (Rust) | Improvement |
 |--------|--------------------------|---------------------------|-------------|
-| **Disk footprint** | ~66MB (33MB JIRA + 33MB Confluence node_modules) | **7.4MB** single binary | **9x smaller** |
+| **Disk footprint** | ~66MB (33MB JIRA + 33MB Confluence node_modules) | **8MB** single binary | **8x smaller** |
 | **Startup time** | ~1.9s (Node.js + V8 init + npm resolve) | **6ms** | **300x faster** |
 | **Runtime memory** | ~50-80MB per Node.js MCP process | **~8-12MB** | **5-8x less** |
 | **Processes needed** | 3 separate servers (JIRA + Confluence + Slack) | **1 server** | **3x fewer** |
@@ -61,7 +61,7 @@ To answer "what context exists about topic X?":
 
 ## Prerequisites
 
-**Rust toolchain** (1.75+):
+**Rust toolchain** (1.80+):
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -78,13 +78,23 @@ brew install ripgrep   # macOS
 
 ## Quick Start
 
+### One-click install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ganesh-tt/unified-search-mcp/master/install.sh | bash
+```
+
+This installs Rust (if needed), builds the binary, creates a config file, and prints setup instructions.
+
+### Manual build
+
 ```bash
 git clone https://github.com/ganesh-tt/unified-search-mcp.git
 cd unified-search-mcp
 cargo build --release
 ```
 
-Binary is at `target/release/unified-search-mcp` (~7MB).
+Binary is at `target/release/unified-search-mcp` (~8MB).
 
 ### 1. Get credentials
 
@@ -139,6 +149,13 @@ sources:
     weight: 1.0
     max_results: 10
 
+  github:
+    enabled: true
+    orgs: ["your-org"]             # GitHub org(s) to search
+    repos: []                      # empty = all repos in org
+    weight: 1.0
+    max_results: 10
+
   local_text:
     enabled: true
     paths:
@@ -168,7 +185,7 @@ export ATLASSIAN_API_TOKEN="your-api-token"
 
 Example output:
 ```
-unified-search-mcp v0.1.0 -- preflight check
+unified-search-mcp v0.3.0 -- preflight check
 
 [OK]  Config loaded from ./config.yaml (4 sources enabled)
 [OK]  Slack: auth.test OK (320ms)
@@ -206,13 +223,15 @@ Ready! 4 sources configured, 4 healthy.
 
 ## MCP Tools
 
-| Tool | Description |
-|------|-------------|
-| `unified_search` | Search all enabled sources in parallel. Returns a ranked Markdown table with comments. Supports `no_cache` for forced refresh. |
-| `search_source` | Search a single named source (`slack`, `confluence`, `jira`, `github`, `local_text`). Returns JSON. Supports `no_cache`. |
-| `get_detail` | Fetch full details for a specific item. Auto-detects JIRA keys, Atlassian URLs, Slack permalinks, GitHub PR/issue URLs. Returns rich Markdown. |
-| `list_sources` | Show enabled sources and their health/latency status. |
-| `index_local` | Trigger vector index rebuild (Phase 2 -- not yet available). |
+| Tool | Tier | Description |
+|------|------|-------------|
+| `unified_search` | Fast | Search all enabled sources in parallel. Returns a ranked Markdown table with comments. Supports `no_cache` for forced refresh. |
+| `search_source` | Fast | Search a single named source (`slack`, `confluence`, `jira`, `github`, `local_text`). Supports `no_cache`. |
+| `get_detail` | Fast | Fetch full details for a specific item. Auto-detects JIRA keys, Atlassian URLs, Slack permalinks, GitHub PR/issue URLs. Returns rich Markdown. |
+| `list_sources` | Fast | Show enabled sources and their health/latency status. |
+| `search_confluence_comments` | Deep | Confluence search with full comment text inlined per result (max 10 results, 45s timeout). |
+| `search_jira_comments` | Deep | JIRA search with all comments per ticket (max 10 results, 45s timeout). |
+| `search_slack_threads` | Deep | Slack search with full thread replies per message (max 10 results, 45s timeout). |
 
 ### `unified_search`
 
@@ -237,6 +256,8 @@ Fetches complete content for a single item. Accepts:
 - JIRA URL: `https://yourorg.atlassian.net/browse/FIN-1234`
 - Confluence URL: `https://yourorg.atlassian.net/wiki/spaces/PROD/pages/123456/Page+Title`
 - Slack permalink: `https://yourorg.slack.com/archives/C06ABC/p1712000000123456`
+- GitHub URL: `https://github.com/owner/repo/pull/42` or `https://github.com/owner/repo/issues/7`
+- GitHub shorthand: `owner/repo#42` (with `source: "github"`)
 
 Optional `source` parameter forces interpretation (e.g., `source: "confluence"` with a page title).
 
@@ -245,6 +266,10 @@ Optional `source` parameter forces interpretation (e.g., `source: "confluence"` 
 **Confluence response includes:** full page body, labels, child pages, all comments
 
 **Slack response includes:** original message, all thread replies, channel name, participant list
+
+**GitHub PR response includes:** title, body, status, reviews, line comments, diff stats, CI status
+
+**GitHub issue response includes:** title, body, labels, assignees, all comments
 
 ## Metrics & Adoption Tracking
 
@@ -308,6 +333,13 @@ sources:
     weight: 1.0
     max_results: 10
 
+  github:
+    enabled: true/false
+    orgs: ["your-org"]            # GitHub org(s) to search
+    repos: ["repo1", "repo2"]     # Optional: restrict to specific repos (empty = all)
+    weight: 1.0
+    max_results: 10
+
   local_text:
     enabled: true/false
     paths:                        # Directories to search (tilde expanded)
@@ -344,8 +376,8 @@ sources:
                 +----------------+ |
                 | SearchOrchestrator| (core.rs — fan-out, merge, rank, dedup)
                 +----------------+
-                 /    |     |    \
-              Slack  Conf  JIRA  LocalText     (sources/*.rs — SearchSource trait)
+                 /    |     |    \     \
+              Slack  Conf  JIRA  GitHub  LocalText   (sources/*.rs — SearchSource trait)
 ```
 
 **Adding a new source:** Implement the `SearchSource` trait (4 methods: `name`, `description`, `health_check`, `search`) and register it in `main.rs`. See `src/sources/slack.rs` for a complete example.
@@ -376,15 +408,18 @@ cargo run -- --stats --days 7
 
 | File | Tests | What it covers |
 |------|-------|---------------|
-| `tests/test_jira.rs` | 21 | Search, comments, get_detail, auth, errors |
-| `tests/test_confluence.rs` | 20 | Search, comment enrichment, get_detail, errors |
+| `tests/test_jira.rs` | 25 | Search, comments, get_detail, auth, errors |
+| `tests/test_confluence.rs` | 26 | Search, comment enrichment, get_detail, errors |
+| `tests/test_confluence_markdown.rs` | 21 | HTML-to-Markdown conversion, tables, macros |
 | `tests/test_slack.rs` | 13 | Search, get_detail_thread, auth, rate limiting |
-| `tests/test_core.rs` | 14 | Orchestrator fan-out, ranking, dedup, timeouts, per-source stats |
-| `tests/test_server.rs` | 8 | MCP tool dispatch, get_detail wiring, error paths |
-| `tests/test_resolve.rs` | 11 | Identifier auto-detection, URL parsing, force_source |
-| `tests/test_metrics.rs` | 3 | JSONL logging, serialization |
+| `tests/test_github.rs` | 16 | PR/issue search, get_detail, CLI subprocess |
+| `tests/test_core.rs` | 16 | Orchestrator fan-out, ranking, dedup, timeouts, per-source stats |
+| `tests/test_server.rs` | 7 | MCP tool dispatch, get_detail wiring, error paths |
+| `tests/test_resolve.rs` | 20 | Identifier auto-detection, URL parsing, force_source |
+| `tests/test_config.rs` | 13 | YAML parsing, env var interpolation, validation |
+| `tests/test_cache.rs` | 8 | LRU cache, TTL expiry, no_cache bypass |
+| `tests/test_metrics.rs` | 4 | JSONL logging, serialization, rotation |
 | `tests/test_models.rs` | 13 | Data model serialization, ordering |
-| `tests/test_config.rs` | 9 | YAML parsing, env var interpolation, validation |
 | `tests/test_local_text.rs` | 12 | Ripgrep + fallback search, glob matching |
 | `tests/test_integration.rs` | 9 | End-to-end flows |
 
@@ -394,12 +429,12 @@ All HTTP-based tests use [wiremock](https://crates.io/crates/wiremock) for deter
 
 | Metric | Measured value |
 |--------|---------------|
-| Binary size | 7.4MB (stripped) |
+| Binary size | 8MB (stripped) |
 | Runtime RAM | ~8-12MB idle |
 | Startup time | 6ms |
 | Query latency | 400ms-1.5s (parallel fan-out, bounded by slowest source) |
-| Source lines | ~6,700 Rust |
-| Test count | 133 |
+| Source lines | ~7,400 Rust |
+| Test count | 207 |
 
 ## CLI Reference
 

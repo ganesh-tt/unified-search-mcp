@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.3.1 (2026-04-10)
+
+### Fixed
+- CI failures: `cargo fmt --check` and `cargo clippy -- -D warnings` now pass
+- Bumped MSRV from 1.75 to 1.80 (required by `LazyLock` and other 1.80+ features)
+- Fixed 49 clippy warnings: `map_or` → `is_some_and`, dead code annotations, redundant conditions, identical branches
+
+### Added
+- One-click install script (`install.sh`) — installs Rust, builds binary, creates config
+- Updated README: all 7 MCP tools documented (including 3 deep-enrichment tools), GitHub source in examples, accurate test/binary metrics
+
 ## v0.3.0 (2026-04-03)
 
 ### Added
