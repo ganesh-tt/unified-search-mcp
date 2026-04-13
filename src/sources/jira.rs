@@ -508,7 +508,7 @@ impl SearchSource for JiraSource {
 
     async fn search(&self, query: &SearchQuery) -> Result<Vec<SearchResult>, SearchError> {
         let jql = self.build_jql(query);
-        let url = format!("{}/rest/api/3/search", self.config.base_url);
+        let url = format!("{}/rest/api/3/search/jql", self.config.base_url);
 
         let fields = "summary,description,comment,status,updated,assignee";
 

@@ -212,7 +212,7 @@ async fn full_pipeline_all_sources_mocked() {
 
     // Mount JIRA mock
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .respond_with(
             ResponseTemplate::new(200).set_body_json(jira_success_body(&jira_server.uri())),
         )
@@ -299,7 +299,7 @@ async fn mixed_success_failure() {
 
     // JIRA succeeds
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .respond_with(
             ResponseTemplate::new(200).set_body_json(jira_success_body(&jira_server.uri())),
         )
@@ -363,7 +363,7 @@ async fn search_source_single() {
 
     // Mount jira mock (should NOT be queried)
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .respond_with(
             ResponseTemplate::new(200).set_body_json(jira_success_body(&jira_server.uri())),
         )
@@ -496,7 +496,7 @@ async fn unified_search_returns_markdown_table() {
         .await;
 
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .respond_with(
             ResponseTemplate::new(200).set_body_json(jira_success_body(&jira_server.uri())),
         )
@@ -579,7 +579,7 @@ async fn source_filter_respected() {
 
     // Mount JIRA mock
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .respond_with(
             ResponseTemplate::new(200).set_body_json(jira_success_body(&jira_server.uri())),
         )
@@ -677,7 +677,7 @@ async fn max_results_global() {
     });
 
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .respond_with(ResponseTemplate::new(200).set_body_json(jira_body))
         .mount(&jira_server)
         .await;

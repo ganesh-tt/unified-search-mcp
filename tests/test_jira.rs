@@ -115,7 +115,7 @@ async fn successful_search_maps_results() {
     ];
 
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .respond_with(ResponseTemplate::new(200).set_body_json(jira_search_response(issues)))
         .mount(&server)
         .await;
@@ -154,7 +154,7 @@ async fn project_filter_in_jql() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .and(query_param_contains("jql", "project IN"))
         .and(query_param_contains("jql", "\"FIN\""))
         .and(query_param_contains("jql", "\"PLAT\""))
@@ -189,7 +189,7 @@ async fn description_truncated() {
     )];
 
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .respond_with(ResponseTemplate::new(200).set_body_json(jira_search_response(issues)))
         .mount(&server)
         .await;
@@ -214,7 +214,7 @@ async fn empty_results() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .respond_with(ResponseTemplate::new(200).set_body_json(jira_search_response(vec![])))
         .mount(&server)
         .await;
@@ -235,7 +235,7 @@ async fn auth_failure_401() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .respond_with(ResponseTemplate::new(401))
         .mount(&server)
         .await;
@@ -261,7 +261,7 @@ async fn forbidden_403() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .respond_with(ResponseTemplate::new(403))
         .mount(&server)
         .await;
@@ -288,7 +288,7 @@ async fn rate_limited_429() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .respond_with(ResponseTemplate::new(429).insert_header("Retry-After", "60"))
         .mount(&server)
         .await;
@@ -314,7 +314,7 @@ async fn server_error_500() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .respond_with(ResponseTemplate::new(500))
         .mount(&server)
         .await;
@@ -340,7 +340,7 @@ async fn network_timeout() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .respond_with(
             ResponseTemplate::new(200)
                 .set_body_json(jira_search_response(vec![]))
@@ -371,7 +371,7 @@ async fn malformed_json() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .respond_with(ResponseTemplate::new(200).set_body_string("this is not json {{{"))
         .mount(&server)
         .await;
@@ -432,7 +432,7 @@ async fn metadata_includes_fields() {
     )];
 
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .respond_with(ResponseTemplate::new(200).set_body_json(jira_search_response(issues)))
         .mount(&server)
         .await;
@@ -467,7 +467,7 @@ async fn browse_url_construction() {
     )];
 
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .respond_with(ResponseTemplate::new(200).set_body_json(jira_search_response(issues)))
         .mount(&server)
         .await;
@@ -517,7 +517,7 @@ async fn relevance_from_api_order() {
     ];
 
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .respond_with(ResponseTemplate::new(200).set_body_json(jira_search_response(issues)))
         .mount(&server)
         .await;
@@ -546,7 +546,7 @@ async fn query_with_quotes_escaped() {
 
     // The query has double quotes that must be escaped in JQL
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .and(query_param_contains("jql", "\\\""))
         .respond_with(ResponseTemplate::new(200).set_body_json(jira_search_response(vec![])))
         .mount(&server)
@@ -572,7 +572,7 @@ async fn query_with_jql_operators_literal() {
 
     // "AND OR NOT" in the query text should be treated as literal text, not JQL operators
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .and(query_param_contains("jql", "AND OR NOT"))
         .respond_with(ResponseTemplate::new(200).set_body_json(jira_search_response(vec![])))
         .mount(&server)
@@ -596,7 +596,7 @@ async fn search_extracts_comments_from_response() {
     let body = include_str!("../fixtures/jira/search_with_comments.json");
 
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .respond_with(ResponseTemplate::new(200).set_body_raw(body, "application/json"))
         .mount(&server)
         .await;
@@ -651,7 +651,7 @@ async fn search_handles_empty_comments() {
     )];
 
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .respond_with(ResponseTemplate::new(200).set_body_json(jira_search_response(issues)))
         .mount(&server)
         .await;
@@ -754,7 +754,7 @@ async fn jql_escapes_backslashes_and_quotes() {
     // We match on "foo\\\\bar" because query_param_contains gets the
     // URL-decoded value, and we need the JQL literal "foo\\bar".
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .and(query_param_contains("jql", r#"foo\\bar"#))
         .respond_with(ResponseTemplate::new(200).set_body_json(jira_search_response(vec![])))
         .expect(1)
@@ -836,7 +836,7 @@ async fn time_filter_after_before() {
     let before = Utc.with_ymd_and_hms(2026, 3, 31, 23, 59, 59).unwrap();
 
     Mock::given(method("GET"))
-        .and(path("/rest/api/3/search"))
+        .and(path("/rest/api/3/search/jql"))
         .and(query_param_contains("jql", "updated >= \"2026-01-01\""))
         .and(query_param_contains("jql", "updated <= \"2026-03-31\""))
         .respond_with(ResponseTemplate::new(200).set_body_json(jira_search_response(vec![])))

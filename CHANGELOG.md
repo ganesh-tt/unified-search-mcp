@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.3 (2026-04-13)
+
+### Fixed
+- **JIRA search 410 Gone** — Atlassian permanently removed `/rest/api/3/search` ([CHANGE-2046](https://developer.atlassian.com/changelog/#CHANGE-2046)). Migrated to `/rest/api/3/search/jql`. Same request params and response structure.
+
 ## v0.3.2 (2026-04-10)
 
 ### Performance
