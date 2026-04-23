@@ -136,6 +136,26 @@ fn force_source_confluence_title() {
 }
 
 #[test]
+fn force_source_confluence_numeric_id_becomes_page_id() {
+    let result = force_source("3058860033", "confluence");
+    assert!(result.is_some());
+    let (st, parsed) = result.unwrap();
+    assert!(matches!(st, SourceType::Confluence));
+    match parsed {
+        ParsedIdentifier::ConfluencePageId(id) => assert_eq!(id, "3058860033"),
+        other => panic!("Expected ConfluencePageId, got {:?}", other),
+    }
+}
+
+#[test]
+fn force_source_confluence_short_numeric_stays_title() {
+    let result = force_source("12345", "confluence");
+    assert!(result.is_some());
+    let (_, parsed) = result.unwrap();
+    assert!(matches!(parsed, ParsedIdentifier::ConfluenceTitle { .. }));
+}
+
+#[test]
 fn force_source_slack_without_url_returns_none() {
     let result = force_source("some text", "slack");
     assert!(result.is_none()); // Slack requires a parseable URL

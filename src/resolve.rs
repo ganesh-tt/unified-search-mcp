@@ -32,6 +32,10 @@ static JIRA_KEY_RE: LazyLock<Regex> =
 static GITHUB_SHORTHAND_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^([a-zA-Z0-9._-]+)#(\d+)$").unwrap());
 
+// Bare numeric Confluence page ID (6+ digits). Used only with force_source("confluence").
+static CONFLUENCE_NUMERIC_ID_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\d{6,}$").unwrap());
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum SourceType {
     Jira,
@@ -170,13 +174,20 @@ pub fn force_source(identifier: &str, source: &str) -> Option<(SourceType, Parse
         "confluence" => detect_source(id)
             .filter(|(st, _)| matches!(st, SourceType::Confluence))
             .or_else(|| {
-                Some((
-                    SourceType::Confluence,
-                    ParsedIdentifier::ConfluenceTitle {
-                        title: id.to_string(),
-                        space: None,
-                    },
-                ))
+                if CONFLUENCE_NUMERIC_ID_RE.is_match(id) {
+                    Some((
+                        SourceType::Confluence,
+                        ParsedIdentifier::ConfluencePageId(id.to_string()),
+                    ))
+                } else {
+                    Some((
+                        SourceType::Confluence,
+                        ParsedIdentifier::ConfluenceTitle {
+                            title: id.to_string(),
+                            space: None,
+                        },
+                    ))
+                }
             }),
         "slack" => detect_source(id).filter(|(st, _)| matches!(st, SourceType::Slack)),
         "github" => {

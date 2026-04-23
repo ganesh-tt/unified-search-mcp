@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.4 (2026-04-23)
+
+### Fixed
+- **Bare Confluence numeric page IDs now resolve** — `get_detail` with `source="confluence"` and a pure-numeric identifier (e.g. `3058860033`) previously fell through to the unimplemented title-lookup path and returned `"Confluence title lookup not yet implemented"` in 0ms. Sub-agents that extracted the page ID from a URL before calling the tool hit this repeatedly. Now 6+ digit numeric identifiers with `source="confluence"` are routed to `ConfluencePageId` and fetched via the v2 API like URL inputs.
+
 ## v0.3.3 (2026-04-13)
 
 ### Fixed

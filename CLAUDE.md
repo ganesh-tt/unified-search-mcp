@@ -22,6 +22,7 @@
 - Fixtures in `fixtures/` directory, loaded via `include_str!`
 
 ## Common Gotchas
+- **Atlassian API deprecations return 410 Gone**: Check https://developer.atlassian.com/changelog/ when JIRA/Confluence endpoints suddenly fail. CHANGE-2046 removed `/rest/api/3/search` → use `/rest/api/3/search/jql`. Test with `curl -s -o /dev/null -w "%{http_code}"` against live API before assuming code bug.
 - **ETXTBSY on Linux**: `NamedTempFile` keeps write fd open — exec fails on Linux. Use `TempDir` + `std::fs::write` for mock scripts.
 - **MSRV must match features**: `LazyLock` requires 1.80. Clippy enforces this via MSRV lint. Bump `Cargo.toml` rust-version if adding newer APIs.
 - **`cargo clippy --fix`** auto-fixes most lint issues but NOT: dead code, identical blocks, redundant conditions — those need manual fixes.
