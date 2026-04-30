@@ -37,16 +37,17 @@ impl MetricsLogger {
         Self { path }
     }
 
-    /// Log a metrics entry. Offloaded to the blocking thread pool so sync
-    /// file I/O never stalls the tokio async runtime.
+    /// Log a metrics entry. Fire-and-forget: the write runs on the blocking
+    /// pool but the caller never awaits its completion. Keeps the MCP tool
+    /// handler off the critical path of file I/O — if APFS, iCloud sync, or
+    /// the blocking pool stalls, the tool call still returns on time.
     pub async fn log(&self, entry: MetricsEntry) {
         let path = self.path.clone();
-        let _ = tokio::task::spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || {
             if let Err(e) = write_entry(&path, &entry) {
                 eprintln!("metrics: failed to write: {}", e);
             }
-        })
-        .await;
+        });
     }
 }
 
@@ -95,14 +96,19 @@ fn write_entry(path: &PathBuf, entry: &MetricsEntry) -> std::io::Result<()> {
         }
     }
 
-    let line = serde_json::to_string(&json_value).unwrap_or_default();
+    let mut line = serde_json::to_string(&json_value).unwrap_or_default();
+    line.push('\n');
 
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(path)?;
 
-    writeln!(file, "{}", line)?;
+    // Single write_all syscall keeps the line + trailing newline atomic against
+    // concurrent appenders (relied on for cross-MCP-process safety since
+    // multiple Claude sessions append to the same metrics.jsonl). With
+    // O_APPEND set, POSIX guarantees this is atomic for writes ≤ PIPE_BUF.
+    file.write_all(line.as_bytes())?;
 
     #[cfg(unix)]
     {

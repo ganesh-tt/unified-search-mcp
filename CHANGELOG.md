@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.5 (2026-04-30)
+
+### Fixed
+- **Multi-day MCP handler hang** — three nested issues let `get_detail` (and any other tool) wedge indefinitely under multi-session load:
+  1. No outer timeout on MCP tool handlers in `src/mcp.rs`. The 30s `GET_DETAIL_TIMEOUT` only wrapped the upstream fetch, not the surrounding code (notably the metrics emit). Every handler now has a hard outer `tokio::time::timeout` (60s fast tools, 75s enriched) that returns a typed error string instead of hanging.
+  2. `MetricsLogger::log` awaited its `spawn_blocking` write. Across 5+ Claude sessions appending to the shared `~/.unified-search/metrics.jsonl`, blocking-pool contention or filesystem-lock contention could stall this `await` indefinitely — and because the stall was inside the metrics path, no metrics entry was ever logged for the stuck call. Now fire-and-forget; the write never blocks the tool response. The append is also collapsed into a single `write_all` syscall so concurrent appends from separate MCP processes don't interleave.
+  3. CPU-bound Confluence-storage-format → Markdown conversion ran on the async runtime. `tokio::time::timeout` is cooperative — a future that never yields can't be preempted. The converter now runs on `spawn_blocking` with a 15s internal timeout so the runtime can detect overruns.
+
 ## v0.3.4 (2026-04-23)
 
 ### Fixed

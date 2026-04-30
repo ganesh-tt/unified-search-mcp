@@ -1,5 +1,32 @@
+use std::path::Path;
+use std::time::Duration;
+
 use tempfile::TempDir;
 use unified_search_mcp::metrics::{MetricsEntry, MetricsLogger};
+
+/// `log()` is fire-and-forget so the spawn_blocking write may not have flushed
+/// when the test thread reads the file. Poll briefly until at least
+/// `expected_lines` non-empty lines are present (or fail after the deadline).
+async fn wait_for_lines(path: &Path, expected_lines: usize) -> String {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            let count = content.lines().filter(|l| !l.is_empty()).count();
+            if count >= expected_lines {
+                return content;
+            }
+        }
+        if tokio::time::Instant::now() >= deadline {
+            let actual = std::fs::read_to_string(path).unwrap_or_default();
+            let count = actual.lines().filter(|l| !l.is_empty()).count();
+            panic!(
+                "metrics file did not reach {} lines within 5s (got {} lines: {:?})",
+                expected_lines, count, actual
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
 
 #[tokio::test]
 async fn logs_entry_to_jsonl() {
@@ -19,7 +46,7 @@ async fn logs_entry_to_jsonl() {
 
     logger.log(entry).await;
 
-    let content = std::fs::read_to_string(&path).unwrap();
+    let content = wait_for_lines(&path, 1).await;
     let lines: Vec<&str> = content.lines().collect();
     assert_eq!(lines.len(), 1);
 
@@ -49,9 +76,7 @@ async fn logs_multiple_entries() {
         logger.log(entry).await;
     }
 
-    // log() now awaits spawn_blocking — writes are sequential, no sleep needed
-
-    let content = std::fs::read_to_string(&path).unwrap();
+    let content = wait_for_lines(&path, 5).await;
     let lines: Vec<&str> = content.lines().filter(|l| !l.is_empty()).collect();
     assert_eq!(lines.len(), 5);
 }
@@ -74,7 +99,7 @@ async fn truncates_long_query_in_log() {
 
     logger.log(entry).await;
 
-    let content = std::fs::read_to_string(&path).unwrap();
+    let content = wait_for_lines(&path, 1).await;
     let parsed: serde_json::Value = serde_json::from_str(content.lines().next().unwrap()).unwrap();
     let logged_query = parsed["query"].as_str().unwrap();
     assert!(

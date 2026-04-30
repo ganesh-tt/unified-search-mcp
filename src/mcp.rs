@@ -4,6 +4,7 @@
 //! that Claude Code (and other MCP clients) can call them over stdio.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use rmcp::{
     handler::server::{tool::ToolRouter, wrapper::Parameters},
@@ -14,6 +15,42 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::server::UnifiedSearchServer;
+
+/// Outer safety-net timeouts for MCP tool handlers. These are intentionally
+/// looser than the per-call timeouts inside `UnifiedSearchServer` (30s for
+/// `get_detail`, 45s for enriched search) so that the inner timeout always
+/// fires first and produces a typed error message. The outer guard exists
+/// only to catch pathological hangs anywhere in the handler — including
+/// CPU-bound parsers, blocking-pool starvation, or downstream futures that
+/// fail to yield. A hung tool call must NEVER block the rmcp stdio loop
+/// indefinitely; users should see an error string within ~60s, not days.
+const HANDLER_TIMEOUT_FAST: Duration = Duration::from_secs(60);
+const HANDLER_TIMEOUT_ENRICHED: Duration = Duration::from_secs(75);
+
+/// Wrap an async handler body in a hard timeout. On expiry, returns an error
+/// string the MCP client can surface to the user.
+async fn run_with_timeout<F>(tool_name: &str, dur: Duration, fut: F) -> String
+where
+    F: std::future::Future<Output = String>,
+{
+    match tokio::time::timeout(dur, fut).await {
+        Ok(s) => s,
+        Err(_) => {
+            tracing::error!(
+                tool = tool_name,
+                timeout_secs = dur.as_secs(),
+                "MCP handler exceeded outer timeout — returning error to client",
+            );
+            format!(
+                "Error: {} handler exceeded {}s outer timeout. \
+                 An upstream call or parser is likely wedged. \
+                 Check stderr logs for the last 'starting' tracing event.",
+                tool_name,
+                dur.as_secs(),
+            )
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Tool parameter structs
@@ -100,14 +137,22 @@ impl McpServer {
         description = "Search across Slack messages, Confluence pages, JIRA tickets (including comments), GitHub PRs/issues/code, and local code/docs in parallel. Use this when looking for decisions, discussions, documentation, or code related to a topic. Also use instead of jira_get or conf_get for searching. Returns a ranked Markdown table with results from all sources. Example queries: 'broadcast threshold decision', 'auth middleware migration', 'FIN-10384 context'."
     )]
     async fn unified_search(&self, Parameters(params): Parameters<UnifiedSearchParams>) -> String {
-        self.server
-            .handle_unified_search(
-                params.query,
-                params.sources,
-                params.max_results,
-                params.no_cache.unwrap_or(false),
-            )
-            .await
+        let server = Arc::clone(&self.server);
+        run_with_timeout(
+            "unified_search",
+            HANDLER_TIMEOUT_FAST,
+            async move {
+                server
+                    .handle_unified_search(
+                        params.query,
+                        params.sources,
+                        params.max_results,
+                        params.no_cache.unwrap_or(false),
+                    )
+                    .await
+            },
+        )
+        .await
     }
 
     /// Search a single named source.
@@ -116,14 +161,22 @@ impl McpServer {
         description = "Search a single source by name: 'slack', 'confluence', 'jira', 'github', or 'local_text'. Use when you know which system has the answer. Returns detailed JSON results from that source only."
     )]
     async fn search_source(&self, Parameters(params): Parameters<SearchSourceParams>) -> String {
-        self.server
-            .handle_search_source(
-                params.source,
-                params.query,
-                params.max_results,
-                params.no_cache.unwrap_or(false),
-            )
-            .await
+        let server = Arc::clone(&self.server);
+        run_with_timeout(
+            "search_source",
+            HANDLER_TIMEOUT_FAST,
+            async move {
+                server
+                    .handle_search_source(
+                        params.source,
+                        params.query,
+                        params.max_results,
+                        params.no_cache.unwrap_or(false),
+                    )
+                    .await
+            },
+        )
+        .await
     }
 
     /// Search Confluence with comment previews included in each result.
@@ -134,9 +187,17 @@ impl McpServer {
         &self,
         Parameters(params): Parameters<EnrichedSearchParams>,
     ) -> String {
-        self.server
-            .handle_search_confluence_comments(params.query, params.max_results)
-            .await
+        let server = Arc::clone(&self.server);
+        run_with_timeout(
+            "search_confluence_comments",
+            HANDLER_TIMEOUT_ENRICHED,
+            async move {
+                server
+                    .handle_search_confluence_comments(params.query, params.max_results)
+                    .await
+            },
+        )
+        .await
     }
 
     /// Search JIRA and fetch ALL comments for each matching ticket.
@@ -147,9 +208,17 @@ impl McpServer {
         &self,
         Parameters(params): Parameters<EnrichedSearchParams>,
     ) -> String {
-        self.server
-            .handle_search_jira_comments(params.query, params.max_results)
-            .await
+        let server = Arc::clone(&self.server);
+        run_with_timeout(
+            "search_jira_comments",
+            HANDLER_TIMEOUT_ENRICHED,
+            async move {
+                server
+                    .handle_search_jira_comments(params.query, params.max_results)
+                    .await
+            },
+        )
+        .await
     }
 
     /// Search Slack and fetch full threads for each matching message.
@@ -160,9 +229,17 @@ impl McpServer {
         &self,
         Parameters(params): Parameters<EnrichedSearchParams>,
     ) -> String {
-        self.server
-            .handle_search_slack_threads(params.query, params.max_results)
-            .await
+        let server = Arc::clone(&self.server);
+        run_with_timeout(
+            "search_slack_threads",
+            HANDLER_TIMEOUT_ENRICHED,
+            async move {
+                server
+                    .handle_search_slack_threads(params.query, params.max_results)
+                    .await
+            },
+        )
+        .await
     }
 
     /// List all configured sources with their health status.
@@ -170,7 +247,13 @@ impl McpServer {
         description = "Check which search sources are configured and whether they are healthy. Use to diagnose connection issues."
     )]
     async fn list_sources(&self) -> String {
-        self.server.handle_list_sources().await
+        let server = Arc::clone(&self.server);
+        run_with_timeout(
+            "list_sources",
+            HANDLER_TIMEOUT_FAST,
+            async move { server.handle_list_sources().await },
+        )
+        .await
     }
 
     /// Fetch full details for a specific item found via search.
@@ -178,9 +261,17 @@ impl McpServer {
         description = "Fetch full details for a specific JIRA ticket, Confluence page, Slack thread, or GitHub PR/issue. Accepts a JIRA key (FIN-1234), a JIRA/Confluence/Slack/GitHub URL. GitHub PR URLs (github.com/org/repo/pull/N) and issue URLs (github.com/org/repo/issues/N) are auto-detected; use source='github' with 'repo#N' shorthand. Returns full content: description, all comments, reviews, linked issues, subtasks, child pages, or thread replies depending on source."
     )]
     async fn get_detail(&self, Parameters(params): Parameters<GetDetailParams>) -> String {
-        self.server
-            .handle_get_detail(params.identifier, params.source)
-            .await
+        let server = Arc::clone(&self.server);
+        run_with_timeout(
+            "get_detail",
+            HANDLER_TIMEOUT_FAST,
+            async move {
+                server
+                    .handle_get_detail(params.identifier, params.source)
+                    .await
+            },
+        )
+        .await
     }
 }
 

@@ -23,6 +23,8 @@
 
 ## Common Gotchas
 - **Atlassian API deprecations return 410 Gone**: Check https://developer.atlassian.com/changelog/ when JIRA/Confluence endpoints suddenly fail. CHANGE-2046 removed `/rest/api/3/search` → use `/rest/api/3/search/jql`. Test with `curl -s -o /dev/null -w "%{http_code}"` against live API before assuming code bug.
+- **Primary diagnostic is `~/.unified-search/metrics.jsonl`** — every `get_detail` / `unified_search` call logs identifier, source, latency_ms, error. A 0ms `latency_ms` with an error message means the MCP server rejected the input synchronously (bad resolver branch, missing source config). If a sub-agent stalls at 600s but the metrics entry shows a fast response, the hang is in the Claude Code sub-agent process, not this server.
+- **`force_source("confluence", X)` fallback is ConfluenceTitle (unimplemented)** — only URLs and bare numeric page IDs (6+ digits, since v0.3.4) are accepted. Any other string falls through to an instant `"Confluence title lookup not yet implemented"` error. Do not remove the `CONFLUENCE_NUMERIC_ID_RE` branch in `resolve.rs` without implementing title lookup first.
 - **ETXTBSY on Linux**: `NamedTempFile` keeps write fd open — exec fails on Linux. Use `TempDir` + `std::fs::write` for mock scripts.
 - **MSRV must match features**: `LazyLock` requires 1.80. Clippy enforces this via MSRV lint. Bump `Cargo.toml` rust-version if adding newer APIs.
 - **`cargo clippy --fix`** auto-fixes most lint issues but NOT: dead code, identical blocks, redundant conditions — those need manual fixes.
@@ -33,10 +35,13 @@
 - `UnifiedSearchServer::new()` same — currently takes (orchestrator, jira, confluence, slack, github, metrics)
 - `config.yaml` is gitignored (has secrets via env vars). Update `config.example.yaml` for new config fields.
 - The MCP binary is loaded at Claude session start — `cargo build --release` mid-session doesn't take effect until next session
-- `cargo test` runs ~207 tests across 15 test files. All must pass before committing.
+- **`cargo build --release` silently no-ops** when source mtimes haven't changed since the last build — reports "Finished ... in 0.xs" with no `Compiling` line, even if git HEAD has newer commits. Verify with `stat -f "%Sm" target/release/unified-search-mcp` vs `git log -1 --format="%ai HEAD"`; if binary predates the commit, `touch src/<file>.rs` then rebuild.
+- `cargo test` runs ~209 tests across 16 test files. All must pass before committing.
 
 ## Async Patterns (MUST follow)
-- All MCP tool handlers MUST have a `tokio::time::timeout` safety net (30s for detail, 45s for enriched search)
+- **Two-tier timeout** for MCP tool handlers (v0.3.5+): inner per-call timeout in `server.rs` (30s detail, 45s enriched, 10s per source) returns a typed error; outer handler timeout in `mcp.rs` via `run_with_timeout` (60s fast, 75s enriched) is a hard safety net that catches anything the inner layer can't preempt — CPU-bound parsers, blocking-pool starvation, futures that never yield. Never remove the outer wrapper to "simplify" — a 2-day MCP hang in Apr 2026 was caused by a missing outer timeout. Inner timeout always fires first; outer is the kill-switch.
+- **Metrics emit must be fire-and-forget** (`MetricsLogger::log` drops the JoinHandle). Awaiting the spawn_blocking write puts file I/O on the critical path of the MCP response and previously caused indefinite hangs under multi-session contention. Append-write is also single-syscall (`write_all` on a string with embedded `\n`) so concurrent appends from separate MCP processes stay atomic.
+- **CPU-bound work runs on `spawn_blocking` even if it has no I/O** — e.g., `confluence_markdown::to_markdown` is wrapped in `spawn_blocking` + 15s timeout in `confluence.rs:get_detail_page`. `tokio::time::timeout` is cooperative; a sync future that never yields cannot be preempted on the async runtime.
 - Sync file I/O (`std::fs::*`, `walkdir`, `grep_searcher`) → `tokio::task::spawn_blocking`, never on async runtime
 - HTTP clients: use `Source::build_client()` + `new_with_client()` to share `reqwest::Client` between search and detail paths
 - `tokio::sync::Mutex` for cache, not `std::sync::Mutex` — prevents deadlock if lock held across `.await`

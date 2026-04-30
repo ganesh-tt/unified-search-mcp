@@ -602,15 +602,41 @@ impl ConfluenceSource {
         md.push_str(&format!("| URL | {} |\n", page_url));
         md.push('\n');
 
-        // Body content
+        // Body content. The Confluence storage format → Markdown converter is
+        // pure CPU. On large or pathological pages it can pin the async runtime
+        // for hundreds of ms — and any future bug in the tokenizer (e.g. an
+        // unclosed CDATA, a non-advancing branch) would hang the runtime
+        // indefinitely with no chance for `tokio::time::timeout` to preempt.
+        // Run it on the blocking pool with an internal timeout so the future
+        // can yield and the outer get_detail timeout can still fire.
         md.push_str("## Content\n\n");
         let body_html = page
             .body
             .as_ref()
             .and_then(|b| b.storage.as_ref())
             .and_then(|s| s.value.as_deref())
-            .unwrap_or("");
-        md.push_str(&super::confluence_markdown::to_markdown(body_html));
+            .unwrap_or("")
+            .to_string();
+        let convert_fut = tokio::task::spawn_blocking(move || {
+            super::confluence_markdown::to_markdown(&body_html)
+        });
+        let converted = match tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            convert_fut,
+        )
+        .await
+        {
+            Ok(Ok(s)) => s,
+            Ok(Err(join_err)) => {
+                tracing::error!(page_id = %page_id, error = %join_err, "confluence: markdown converter panicked");
+                "_(markdown conversion failed — see stderr)_".to_string()
+            }
+            Err(_) => {
+                tracing::error!(page_id = %page_id, "confluence: markdown converter timed out after 15s");
+                "_(markdown conversion timed out — page body omitted)_".to_string()
+            }
+        };
+        md.push_str(&converted);
         md.push_str("\n\n");
 
         // Child pages
