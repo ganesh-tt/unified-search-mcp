@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.6 (2026-04-30)
+
+### Fixed
+- **Confluence markdown converter panicked on multi-byte codepoints** — root cause of the multi-day MCP hang patched defensively in v0.3.5. The tokenizer in `confluence_markdown.rs` iterated `Vec<char>` but used those char indices to slice `&input[..]` as if they were byte indices. On any page containing an emoji (✅, 🚫), em-dash (—), or other non-ASCII codepoint the slice landed mid-codepoint and panicked `"byte index N is not a char boundary"`. The panic crossed an async boundary, killed the tokio worker, and (before v0.3.5's `spawn_blocking` wrapper) wedged the MCP server. Rewritten to byte-indexed scanning consistently — UTF-8 continuation bytes (0x80-0xBF) never collide with ASCII delimiters (`<`, `>`, `'`, `"`, `=`, whitespace), so byte indices land on codepoint boundaries automatically. Added 3 regression tests covering emoji in headings, emoji in attributes, and emoji inside CDATA.
+- Verified end-to-end with the FIN-9801 page that triggered the original 2-day stall: `get_detail` now returns the full 51KB body in **1.7s** (previously: panic → silent hang).
+
 ## v0.3.5 (2026-04-30)
 
 ### Fixed

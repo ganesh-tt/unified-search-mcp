@@ -24,15 +24,28 @@ enum Token {
 }
 
 fn tokenize(input: &str) -> Vec<Token> {
+    // Iterate by BYTE index, not char index. All structural delimiters we
+    // search for (`<`, `>`, `'`, `"`, `=`, `/`, `!`) are ASCII, and UTF-8
+    // continuation bytes are always 0x80-0xBF — they never collide with ASCII.
+    // So byte-indexed scans land on codepoint boundaries automatically and
+    // `&input[a..b]` is always slicing-safe.
+    //
+    // Previous implementation iterated `Vec<char>` and used those char indices
+    // to slice `&input[..]` as if they were byte indices — fine for ASCII but
+    // panicked on the first multi-byte codepoint (e.g. an emoji or em-dash) on
+    // a Confluence page. Caused a "byte index N is not a char boundary" panic
+    // → tokio worker death → MCP hang. Fixed by reverting to byte indices end
+    // to end and only constructing `chars()` iterators where we genuinely need
+    // codepoint awareness (none here, since we only look at ASCII delimiters).
     let mut tokens = Vec::new();
-    let chars: Vec<char> = input.chars().collect();
-    let len = chars.len();
+    let bytes = input.as_bytes();
+    let len = bytes.len();
     let mut i = 0;
 
     while i < len {
-        if chars[i] == '<' {
+        if bytes[i] == b'<' {
             // Check for CDATA
-            if i + 8 < len && &input[i..i + 9] == "<![CDATA[" {
+            if i + 9 <= len && &bytes[i..i + 9] == b"<![CDATA[" {
                 let start = i + 9;
                 if let Some(end) = input[start..].find("]]>") {
                     tokens.push(Token::CData(input[start..start + end].to_string()));
@@ -46,7 +59,7 @@ fn tokenize(input: &str) -> Vec<Token> {
             }
 
             // Check for comment <!-- ... -->
-            if i + 3 < len && &input[i..i + 4] == "<!--" {
+            if i + 4 <= len && &bytes[i..i + 4] == b"<!--" {
                 if let Some(end) = input[i + 4..].find("-->") {
                     i = i + 4 + end + 3;
                 } else {
@@ -55,41 +68,39 @@ fn tokenize(input: &str) -> Vec<Token> {
                 continue;
             }
 
-            // Find the end of this tag
+            // Find the end of this tag. Track quoted attribute values that may
+            // legally contain '>'.
             let tag_start = i;
             i += 1;
-            // Handle quoted attribute values that may contain '>'
-            let mut in_quote: Option<char> = None;
+            let mut in_quote: Option<u8> = None;
             while i < len {
+                let b = bytes[i];
                 if let Some(q) = in_quote {
-                    if chars[i] == q {
+                    if b == q {
                         in_quote = None;
                     }
-                } else if chars[i] == '"' || chars[i] == '\'' {
-                    in_quote = Some(chars[i]);
-                } else if chars[i] == '>' {
+                } else if b == b'"' || b == b'\'' {
+                    in_quote = Some(b);
+                } else if b == b'>' {
                     break;
                 }
                 i += 1;
             }
             if i >= len {
-                // Unterminated tag — discard
+                // Unterminated tag — discard rest of input
                 break;
             }
             let tag_content = &input[tag_start + 1..i]; // between < and >
             i += 1; // skip '>'
 
             if let Some(stripped) = tag_content.strip_prefix('/') {
-                // Close tag
                 let name = stripped.trim().to_lowercase();
                 tokens.push(Token::CloseTag { name });
             } else if let Some(inner) = tag_content.strip_suffix('/') {
-                // Self-closing tag
                 let (name, attrs) = parse_tag_inner(inner);
                 tokens.push(Token::SelfClosingTag { name, attrs });
             } else {
                 let (name, attrs) = parse_tag_inner(tag_content);
-                // Some tags are inherently void (no close tag in HTML)
                 if is_void_element(&name) {
                     tokens.push(Token::SelfClosingTag { name, attrs });
                 } else {
@@ -97,9 +108,10 @@ fn tokenize(input: &str) -> Vec<Token> {
                 }
             }
         } else {
-            // Text content
+            // Text content — scan to next '<'. Multi-byte codepoints inside
+            // text are preserved as-is; we just look for the next ASCII '<'.
             let start = i;
-            while i < len && chars[i] != '<' {
+            while i < len && bytes[i] != b'<' {
                 i += 1;
             }
             let text = &input[start..i];
@@ -133,22 +145,28 @@ fn parse_tag_inner(s: &str) -> (String, Vec<(String, String)>) {
 }
 
 fn parse_attributes(s: &str, attrs: &mut Vec<(String, String)>) {
-    let chars: Vec<char> = s.chars().collect();
-    let len = chars.len();
+    // Byte-indexed scan — same rationale as `tokenize`. All structural
+    // delimiters (`=`, `"`, `'`, ASCII whitespace) are single-byte; multi-byte
+    // codepoints inside attribute values pass through `&s[a..b]` slices safely
+    // because byte indices land on codepoint boundaries.
+    let bytes = s.as_bytes();
+    let len = bytes.len();
     let mut i = 0;
+
+    let is_ws = |b: u8| matches!(b, b' ' | b'\t' | b'\n' | b'\r');
 
     while i < len {
         // Skip whitespace
-        while i < len && chars[i].is_whitespace() {
+        while i < len && is_ws(bytes[i]) {
             i += 1;
         }
         if i >= len {
             break;
         }
 
-        // Read attribute name
+        // Read attribute name (terminator: '=' or whitespace)
         let name_start = i;
-        while i < len && chars[i] != '=' && !chars[i].is_whitespace() {
+        while i < len && bytes[i] != b'=' && !is_ws(bytes[i]) {
             i += 1;
         }
         let attr_name = s[name_start..i].to_string();
@@ -157,25 +175,24 @@ fn parse_attributes(s: &str, attrs: &mut Vec<(String, String)>) {
         }
 
         // Skip whitespace around '='
-        while i < len && chars[i].is_whitespace() {
+        while i < len && is_ws(bytes[i]) {
             i += 1;
         }
-        if i >= len || chars[i] != '=' {
-            // Boolean attribute with no value
+        if i >= len || bytes[i] != b'=' {
             attrs.push((attr_name, String::new()));
             continue;
         }
         i += 1; // skip '='
-        while i < len && chars[i].is_whitespace() {
+        while i < len && is_ws(bytes[i]) {
             i += 1;
         }
 
         // Read attribute value
-        if i < len && (chars[i] == '"' || chars[i] == '\'') {
-            let quote = chars[i];
+        if i < len && (bytes[i] == b'"' || bytes[i] == b'\'') {
+            let quote = bytes[i];
             i += 1;
             let val_start = i;
-            while i < len && chars[i] != quote {
+            while i < len && bytes[i] != quote {
                 i += 1;
             }
             let val = &s[val_start..i];
@@ -186,7 +203,7 @@ fn parse_attributes(s: &str, attrs: &mut Vec<(String, String)>) {
         } else {
             // Unquoted value
             let val_start = i;
-            while i < len && !chars[i].is_whitespace() {
+            while i < len && !is_ws(bytes[i]) {
                 i += 1;
             }
             attrs.push((attr_name, s[val_start..i].to_string()));

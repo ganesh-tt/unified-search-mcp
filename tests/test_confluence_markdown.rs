@@ -176,3 +176,41 @@ fn converts_expand_macro() {
 fn plain_text_passthrough() {
     assert_eq!(to_markdown("just plain text"), "just plain text");
 }
+
+// Regression: tokenize() iterated `Vec<char>` but sliced `&input[..]` by those
+// indices as if they were bytes. On any page with multi-byte codepoints (✅,
+// em-dash, etc.) the slice landed mid-codepoint and panicked
+// "byte index N is not a char boundary". The panic crossed an async boundary,
+// killed the tokio worker, and (before v0.3.5) wedged the MCP server for days.
+// Lock the byte-indexed implementation in.
+#[test]
+fn handles_emoji_in_heading() {
+    let html = "<h1>Status ✅ Resolved</h1><p>Body — content</p>";
+    let result = to_markdown(html);
+    assert!(result.contains("✅"), "emoji preserved, got: {}", result);
+    assert!(result.contains("—"), "em-dash preserved, got: {}", result);
+    assert!(
+        result.contains("# Status"),
+        "heading rendered, got: {}",
+        result
+    );
+}
+
+#[test]
+fn handles_emoji_in_attribute_and_text() {
+    let html =
+        r#"<h1 local-id="✅id">FIN-9801 — Investigator Role</h1><p>Status: ✅ done</p>"#;
+    let result = to_markdown(html);
+    assert!(result.contains("FIN-9801"));
+    assert!(result.contains("✅"));
+    assert!(result.contains("—"));
+}
+
+#[test]
+fn handles_emoji_inside_cdata() {
+    let html = "<p>Pre <![CDATA[ status ✅ inside cdata ]]> Post</p>";
+    let result = to_markdown(html);
+    assert!(result.contains("✅"));
+    assert!(result.contains("Pre"));
+    assert!(result.contains("Post"));
+}
